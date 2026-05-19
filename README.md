@@ -175,6 +175,8 @@ See `docs/continual-tasks.md` for task-pair details.
 
 The repo also includes a second conflict family, `data/conflict2_task_a.txt` and `data/conflict2_task_b.txt`, that conflicts on numeric quotas, routes, permissions, windows, and cause/action rules instead of profile attributes. Use it to test whether the current gossip result transfers beyond the first synthetic template.
 
+Combined 6-seed conflict2 results show partial transfer: gossip improved `backward_transfer_a` by `-6.74%` with `learning_b +0.04%`, while fixed repulsion improved `backward_transfer_a` by `-5.40%` with `learning_b +0.05%`. This is positive for transfer, but not a clean gossip-over-repulsion win because fixed repulsion had slightly better `eval_b_after_b` and `retention_ratio`.
+
 `forgetting_a` is still emitted as a compatibility alias for `backward_transfer_a`.
 
 The command prints final task loss plus representation metrics:

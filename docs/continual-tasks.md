@@ -204,3 +204,21 @@ HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 poetry run stt-continual \
   --task-b-file data/conflict2_task_b.txt \
   --output-dir runs
 ```
+
+The 6-seed result on this task family shows partial transfer. Both gossip and fixed repulsion improved `backward_transfer_a` versus baseline:
+
+```text
+gossip tau=0.5 weight=5:
+  backward_transfer_a: -6.74% vs baseline
+  learning_b:          +0.04% vs baseline
+  eval_b_after_b:      -0.74% vs baseline
+  retention_ratio:     +6.53% vs baseline
+
+repulsion=2.0:
+  backward_transfer_a: -5.40% vs baseline
+  learning_b:          +0.05% vs baseline
+  eval_b_after_b:      -0.84% vs baseline
+  retention_ratio:     +7.11% vs baseline
+```
+
+Paired seed deltas were less decisive than the first conflict task. Gossip deltas were `[-0.0722, +0.0096, -0.0562, +0.0008, -0.0066, -0.0502]`. Fixed repulsion deltas were `[-0.0646, -0.0395, -0.0027, +0.0483, -0.0542, -0.0274]`. This supports cross-template transfer for gossip, but not a clean win over repulsion on the second task family.

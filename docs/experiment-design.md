@@ -180,6 +180,24 @@ A first threshold-neighborhood check with `gossip_tau=0.4`, `gossip_weight=5` on
 
 A first weight-neighborhood check with `gossip_tau=0.5`, `gossip_weight=7` on seeds `0 1 2` was also worse than `weight=5` on the primary retention metric: `backward_transfer_a -10.67%`, `learning_b +0.04%`, and `eval_b_after_b -0.33%` vs baseline. It still beat fixed repulsion, but `weight=5` remains the best stability-plasticity point seen so far.
 
+The second conflict family, `data/conflict2_task_a.txt` and `data/conflict2_task_b.txt`, gave a more mixed transfer result. Across seeds `0 1 2 3 4 5`, gossip improved mean `backward_transfer_a` slightly more than fixed repulsion, while repulsion had slightly better B-task loss and retention ratio:
+
+```text
+gossip tau=0.5 weight=5:
+  backward_transfer_a: -6.74% vs baseline
+  learning_b:          +0.04% vs baseline
+  eval_b_after_b:      -0.74% vs baseline
+  retention_ratio:     +6.53% vs baseline
+
+repulsion=2.0:
+  backward_transfer_a: -5.40% vs baseline
+  learning_b:          +0.05% vs baseline
+  eval_b_after_b:      -0.84% vs baseline
+  retention_ratio:     +7.11% vs baseline
+```
+
+This supports transfer beyond the original conflict template, but narrows the claim: gossip is not uniformly better than fixed repulsion across task families yet.
+
 ## Metrics
 
 The experiment prints JSON with:
