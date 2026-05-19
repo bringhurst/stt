@@ -80,3 +80,62 @@ def sparse_activation_loss(hidden: Tensor) -> Tensor:
     if hidden.ndim != 3:
         raise ValueError("hidden must have shape (batch, seq, dim)")
     return hidden.abs().mean()
+
+
+def sample_token_vectors(
+    hidden: Tensor,
+    attention_mask: Tensor | None = None,
+    max_vectors: int = 256,
+) -> Tensor:
+    """Return sampled non-padding token vectors from hidden states.
+
+    Args:
+        hidden: Tensor shaped `(batch, seq, dim)`.
+        attention_mask: Optional mask shaped `(batch, seq)` where nonzero values
+            mark real tokens.
+        max_vectors: Maximum vectors to return. Sampling keeps gossip cheap on
+            memory-constrained MPS runs.
+    """
+    if hidden.ndim != 3:
+        raise ValueError("hidden must have shape (batch, seq, dim)")
+    if attention_mask is not None and attention_mask.shape != hidden.shape[:2]:
+        raise ValueError("attention_mask must have shape (batch, seq)")
+
+    vectors = hidden.reshape(-1, hidden.shape[-1])
+    if attention_mask is not None:
+        mask = attention_mask.reshape(-1).to(dtype=torch.bool, device=hidden.device)
+        vectors = vectors[mask]
+    if vectors.shape[0] <= max_vectors:
+        return vectors
+    indices = torch.randperm(vectors.shape[0], device=hidden.device)[:max_vectors]
+    return vectors.index_select(0, indices)
+
+
+def gossip_repulsion_loss(
+    hidden: Tensor,
+    attention_mask: Tensor | None = None,
+    tau: float = 0.85,
+    k: int = 8,
+    max_vectors: int = 256,
+) -> Tensor:
+    """Thresholded sampled anti-consensus loss over hidden token vectors.
+
+    The loss samples `k` peers per token vector, penalizing only cosine
+    similarities above `tau`. This repairs local collapse without forcing every
+    representation pair apart.
+    """
+    vectors = sample_token_vectors(hidden, attention_mask=attention_mask, max_vectors=max_vectors)
+    if vectors.shape[0] <= 1 or k <= 0:
+        return hidden.new_zeros(())
+
+    vectors = torch.nn.functional.normalize(vectors, dim=-1, eps=1e-8)
+    n = vectors.shape[0]
+    anchors = torch.arange(n, device=hidden.device)
+    peers = torch.randint(0, n, size=(n, k), device=hidden.device)
+    peers = torch.where(peers == anchors[:, None], (peers + 1) % n, peers)
+
+    anchor_vectors = vectors[anchors]
+    peer_vectors = vectors[peers]
+    cosine = (anchor_vectors[:, None, :] * peer_vectors).sum(dim=-1)
+    overlap = torch.relu(cosine - tau)
+    return overlap.pow(2).mean()

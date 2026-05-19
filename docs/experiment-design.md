@@ -46,6 +46,30 @@ Use `--diversity-weight`, `--repulsion-weight`, and `--sparse-weight` for dose-r
 
 The repulsion loss normalizes hidden vectors before pairwise distance calculation. Without normalization, pretrained language-model hidden norms can make the exponential kernel underflow to zero, which hides whether the regularizer is wired correctly.
 
+## Gossip Self-Stabilization
+
+`gossip` is a sampled, thresholded anti-consensus loss over hidden token vectors. It samples a small peer neighborhood for each selected token vector and penalizes only cosine similarity above a threshold `tau`.
+
+The implemented loss is:
+
+```text
+overlap = relu(cos(anchor, peer) - tau)
+gossip_loss = mean(overlap ** 2)
+```
+
+The first implementation uses the final hidden state only, samples non-padding token vectors, and caps sampled vectors with `--max-gossip-vectors` for MPS memory safety.
+
+Defaults:
+
+```text
+gossip_weight: 1.0
+gossip_tau: 0.85
+gossip_k: 8
+max_gossip_vectors: 256
+```
+
+The goal is not maximum separation. The goal is local homeostatic repair when representations become too similar.
+
 Use `--seeds` for repeated trials and `--output-dir runs` to persist a run record. The record includes config, git status, raw results, and mean/std summaries per variant. Use `stt-analyze` to print baseline-relative deltas and pass/fail checks against simple geometry-vs-loss criteria.
 
 For line-based corpora passed through `--text-file`, the runner deterministically shuffles lines per seed, uses 75% for training, and keeps 25% as holdout text. Evaluation averages `--eval-batches` bounded batches from that holdout split so larger corpora do not create a single oversized MPS batch.
@@ -85,6 +109,8 @@ isotropy:        -36.74% vs baseline
 ```
 
 `repulsion=2.5` improved geometry more strongly but increased eval loss more. This makes `2.0` the current default candidate for follow-up continual-learning tests.
+
+Gossip self-stabilization was added after these fixed-repulsion results. The next intended comparison is fixed `repulsion=2.0` vs gossip settings on WikiText geometry and conflict-task continual learning.
 
 ## Metrics
 

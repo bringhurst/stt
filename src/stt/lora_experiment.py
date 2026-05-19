@@ -30,6 +30,7 @@ from transformers import (
 from stt.experiment import Variant, resolve_device
 from stt.losses import (
     attention_diversity_loss,
+    gossip_repulsion_loss,
     representation_repulsion_loss,
     sparse_activation_loss,
 )
@@ -50,6 +51,7 @@ VARIANTS = {
     "baseline": Variant("baseline"),
     "diversity": Variant("diversity", diversity=0.02),
     "repulsion": Variant("repulsion", repulsion=0.02),
+    "gossip": Variant("gossip", gossip=1.0),
     "sparse": Variant("sparse", sparse=0.0005),
     "combined": Variant("combined", diversity=0.01, repulsion=0.01, sparse=0.0002),
 }
@@ -94,6 +96,10 @@ class LoraExperimentResult(TypedDict):
     diversity_weight: float
     repulsion_weight: float
     sparse_weight: float
+    gossip_weight: float
+    gossip_tau: float
+    gossip_k: int
+    max_gossip_vectors: int
     train_lm_loss: float
     eval_lm_loss: float
     head_similarity: float
@@ -103,6 +109,7 @@ class LoraExperimentResult(TypedDict):
     eval_diversity_loss: float
     eval_repulsion_loss: float
     eval_sparse_loss: float
+    eval_gossip_loss: float
     trainable_parameters: int
     total_parameters: int
     trainable_fraction: float
@@ -240,25 +247,38 @@ def batch_slice(encoded: dict[str, Tensor], start: int, batch_size: int) -> dict
     return {name: value.index_select(0, indices) for name, value in encoded.items()}
 
 
-def stt_components(output: Any) -> tuple[Tensor, Tensor, Tensor]:
-    """Return unweighted diversity, repulsion, and sparse STT components."""
+def stt_components(
+    output: Any,
+    attention_mask: Tensor | None = None,
+) -> tuple[Tensor, Tensor, Tensor, Tensor]:
+    """Return unweighted diversity, repulsion, sparse, and gossip components."""
     attention = stack_attentions(output.attentions)
     hidden = last_hidden_state(output.hidden_states)
     return (
         attention_diversity_loss(attention),
         representation_repulsion_loss(hidden),
         sparse_activation_loss(hidden),
+        gossip_repulsion_loss(hidden, attention_mask=attention_mask),
     )
 
 
-def stt_loss(output: Any, variant: Variant) -> Tensor:
+def stt_loss(output: Any, variant: Variant, attention_mask: Tensor | None = None) -> Tensor:
     """Compute weighted STT regularization loss from a model output."""
     hidden = last_hidden_state(output.hidden_states)
-    diversity, repulsion, sparse = stt_components(output)
+    diversity, repulsion, sparse, gossip = stt_components(output, attention_mask=attention_mask)
+    if variant.gossip != 0.0:
+        gossip = gossip_repulsion_loss(
+            hidden,
+            attention_mask=attention_mask,
+            tau=variant.gossip_tau,
+            k=variant.gossip_k,
+            max_vectors=variant.max_gossip_vectors,
+        )
     loss = hidden.new_zeros(())
     loss = loss + variant.diversity * diversity
     loss = loss + variant.repulsion * repulsion
     loss = loss + variant.sparse * sparse
+    loss = loss + variant.gossip * gossip
     return loss
 
 
@@ -267,6 +287,7 @@ def evaluate_model(
     encoded: dict[str, Tensor],
     batch_size: int,
     eval_batches: int,
+    variant: Variant | None = None,
 ) -> dict[str, float]:
     """Average LM and geometry metrics over bounded evaluation batches."""
     values: dict[str, list[float]] = {
@@ -278,13 +299,25 @@ def evaluate_model(
         "eval_diversity_loss": [],
         "eval_repulsion_loss": [],
         "eval_sparse_loss": [],
+        "eval_gossip_loss": [],
     }
     for batch_index in range(max(1, eval_batches)):
         batch = batch_slice(encoded, batch_index * batch_size, batch_size)
         output = model(**batch, output_attentions=True, output_hidden_states=True)
         attention = stack_attentions(output.attentions)
         hidden = last_hidden_state(output.hidden_states)
-        diversity_loss, repulsion_loss, sparse_loss = stt_components(output)
+        diversity_loss, repulsion_loss, sparse_loss, gossip_loss = stt_components(
+            output,
+            attention_mask=batch.get("attention_mask"),
+        )
+        if variant is not None:
+            gossip_loss = gossip_repulsion_loss(
+                hidden,
+                attention_mask=batch.get("attention_mask"),
+                tau=variant.gossip_tau,
+                k=variant.gossip_k,
+                max_vectors=variant.max_gossip_vectors,
+            )
         values["eval_lm_loss"].append(float(output.loss.detach().cpu()))
         values["head_similarity"].append(head_similarity(attention))
         values["effective_rank"].append(effective_rank(hidden))
@@ -293,6 +326,7 @@ def evaluate_model(
         values["eval_diversity_loss"].append(float(diversity_loss.detach().cpu()))
         values["eval_repulsion_loss"].append(float(repulsion_loss.detach().cpu()))
         values["eval_sparse_loss"].append(float(sparse_loss.detach().cpu()))
+        values["eval_gossip_loss"].append(float(gossip_loss.detach().cpu()))
     return {name: statistics.fmean(metric_values) for name, metric_values in values.items()}
 
 
@@ -333,7 +367,9 @@ def train_lora_variant(
         batch = batch_slice(train_encoded, step * settings.batch_size, settings.batch_size)
         output = model(**batch, output_attentions=True, output_hidden_states=True)
         lm_loss = output.loss
-        loss = (lm_loss + stt_loss(output, variant)) / settings.grad_accum
+        loss = (
+            lm_loss + stt_loss(output, variant, attention_mask=batch.get("attention_mask"))
+        ) / settings.grad_accum
         loss.backward()
         if (step + 1) % settings.grad_accum == 0 or step == steps - 1:
             optimizer.step()
@@ -347,6 +383,7 @@ def train_lora_variant(
             eval_encoded,
             batch_size=settings.batch_size,
             eval_batches=settings.eval_batches,
+            variant=variant,
         )
 
     return {
@@ -357,6 +394,10 @@ def train_lora_variant(
         "diversity_weight": variant.diversity,
         "repulsion_weight": variant.repulsion,
         "sparse_weight": variant.sparse,
+        "gossip_weight": variant.gossip,
+        "gossip_tau": variant.gossip_tau,
+        "gossip_k": variant.gossip_k,
+        "max_gossip_vectors": variant.max_gossip_vectors,
         "train_lm_loss": train_lm_loss,
         "eval_lm_loss": eval_metrics["eval_lm_loss"],
         "head_similarity": eval_metrics["head_similarity"],
@@ -366,6 +407,7 @@ def train_lora_variant(
         "eval_diversity_loss": eval_metrics["eval_diversity_loss"],
         "eval_repulsion_loss": eval_metrics["eval_repulsion_loss"],
         "eval_sparse_loss": eval_metrics["eval_sparse_loss"],
+        "eval_gossip_loss": eval_metrics["eval_gossip_loss"],
         "trainable_parameters": trainable,
         "total_parameters": total,
         "trainable_fraction": trainable / total,
@@ -402,14 +444,26 @@ def variant_with_overrides(
     diversity: float | None,
     repulsion: float | None,
     sparse: float | None,
+    gossip: float | None = None,
+    gossip_tau: float | None = None,
+    gossip_k: int | None = None,
+    max_gossip_vectors: int | None = None,
 ) -> Variant:
     """Return a named variant with optional CLI-provided regularizer weights."""
     base = VARIANTS[name]
+    if name == "baseline":
+        return base
     return Variant(
         name=base.name,
         diversity=base.diversity if diversity is None else diversity,
         repulsion=base.repulsion if repulsion is None else repulsion,
         sparse=base.sparse if sparse is None else sparse,
+        gossip=base.gossip if gossip is None else gossip,
+        gossip_tau=base.gossip_tau if gossip_tau is None else gossip_tau,
+        gossip_k=base.gossip_k if gossip_k is None else gossip_k,
+        max_gossip_vectors=(
+            base.max_gossip_vectors if max_gossip_vectors is None else max_gossip_vectors
+        ),
     )
 
 
@@ -420,8 +474,10 @@ def parse_sweep(sweep: str | None) -> tuple[str, list[float]] | None:
     if "=" not in sweep:
         raise ValueError("--sweep must look like name=value,value")
     name, raw_values = sweep.split("=", 1)
-    if name not in {"diversity", "repulsion", "sparse"}:
-        raise ValueError("--sweep name must be diversity, repulsion, or sparse")
+    if name not in {"diversity", "repulsion", "sparse", "gossip", "gossip_tau", "gossip_k"}:
+        raise ValueError(
+            "--sweep name must be diversity, repulsion, sparse, gossip, gossip_tau, or gossip_k"
+        )
     values = [float(value) for value in raw_values.split(",") if value]
     if not values:
         raise ValueError("--sweep must include at least one value")
@@ -433,7 +489,11 @@ def build_variants(
     diversity: float | None,
     repulsion: float | None,
     sparse: float | None,
-    sweep: str | None,
+    gossip: float | None = None,
+    gossip_tau: float | None = None,
+    gossip_k: int | None = None,
+    max_gossip_vectors: int | None = None,
+    sweep: str | None = None,
 ) -> list[Variant]:
     """Build concrete variants from names, overrides, and optional sweep."""
     unknown = sorted(set(names) - set(VARIANTS))
@@ -442,7 +502,16 @@ def build_variants(
     parsed_sweep = parse_sweep(sweep)
     variants = []
     for name in names:
-        base = variant_with_overrides(name, diversity=diversity, repulsion=repulsion, sparse=sparse)
+        base = variant_with_overrides(
+            name,
+            diversity=diversity,
+            repulsion=repulsion,
+            sparse=sparse,
+            gossip=gossip,
+            gossip_tau=gossip_tau,
+            gossip_k=gossip_k,
+            max_gossip_vectors=max_gossip_vectors,
+        )
         if parsed_sweep is None or name == "baseline":
             variants.append(base)
             continue
@@ -454,6 +523,10 @@ def build_variants(
                     diversity=value if sweep_name == "diversity" else base.diversity,
                     repulsion=value if sweep_name == "repulsion" else base.repulsion,
                     sparse=value if sweep_name == "sparse" else base.sparse,
+                    gossip=value if sweep_name == "gossip" else base.gossip,
+                    gossip_tau=value if sweep_name == "gossip_tau" else base.gossip_tau,
+                    gossip_k=int(value) if sweep_name == "gossip_k" else base.gossip_k,
+                    max_gossip_vectors=base.max_gossip_vectors,
                 )
             )
     return variants
@@ -470,6 +543,7 @@ def summarize_results(results: list[LoraExperimentResult]) -> dict[str, dict[str
         "eval_diversity_loss": lambda result: result["eval_diversity_loss"],
         "eval_repulsion_loss": lambda result: result["eval_repulsion_loss"],
         "eval_sparse_loss": lambda result: result["eval_sparse_loss"],
+        "eval_gossip_loss": lambda result: result["eval_gossip_loss"],
     }
     variants = sorted({result["variant"] for result in results})
     summary: dict[str, dict[str, float]] = {}
@@ -502,7 +576,7 @@ def git_status() -> str:
 
 def write_run_record(record: Any, output_dir: str) -> Path:
     """Write a run record to a timestamped directory and return its path."""
-    timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
     run_dir = Path(output_dir) / timestamp
     run_dir.mkdir(parents=True, exist_ok=True)
     result_path = run_dir / "results.json"
@@ -532,6 +606,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--diversity-weight", type=float, default=None)
     parser.add_argument("--repulsion-weight", type=float, default=None)
     parser.add_argument("--sparse-weight", type=float, default=None)
+    parser.add_argument("--gossip-weight", type=float, default=None)
+    parser.add_argument("--gossip-tau", type=float, default=None)
+    parser.add_argument("--gossip-k", type=int, default=None)
+    parser.add_argument("--max-gossip-vectors", type=int, default=None)
     parser.add_argument("--sweep", default=None, help="Dose sweep like repulsion=0,0.1,1.0")
     parser.add_argument(
         "--text-file",
@@ -570,6 +648,10 @@ def main() -> None:
         diversity=args.diversity_weight,
         repulsion=args.repulsion_weight,
         sparse=args.sparse_weight,
+        gossip=args.gossip_weight,
+        gossip_tau=args.gossip_tau,
+        gossip_k=args.gossip_k,
+        max_gossip_vectors=args.max_gossip_vectors,
         sweep=args.sweep,
     )
     texts = load_texts(args.text_file)
@@ -600,6 +682,10 @@ def main() -> None:
             "variants": [variant.name for variant in variants],
             "text_file": args.text_file,
             "sweep": args.sweep,
+            "gossip_weight": args.gossip_weight,
+            "gossip_tau": args.gossip_tau,
+            "gossip_k": args.gossip_k,
+            "max_gossip_vectors": args.max_gossip_vectors,
         },
         "git_status": git_status(),
         "results": results,

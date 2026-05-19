@@ -81,3 +81,30 @@ HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 poetry run stt-continual \
   --output-dir runs \
   | tee runs/qwen-continual-conflict-confirm.log
 ```
+
+For the first gossip comparison on the conflict task:
+
+```bash
+HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 poetry run stt-continual \
+  --model Qwen/Qwen2.5-0.5B \
+  --device auto \
+  --phase-steps 150 \
+  --max-length 128 \
+  --batch-size 1 \
+  --eval-batches 16 \
+  --grad-accum 4 \
+  --learning-rate 2e-4 \
+  --variants baseline repulsion gossip \
+  --sweep gossip=0.5,1.0,2.0 \
+  --repulsion-weight 2.0 \
+  --gossip-tau 0.85 \
+  --gossip-k 8 \
+  --max-gossip-vectors 256 \
+  --seeds 0 1 2 \
+  --task-a-file data/conflict_task_a.txt \
+  --task-b-file data/conflict_task_b.txt \
+  --output-dir runs \
+  | tee runs/qwen-continual-conflict-gossip.log
+```
+
+This compares baseline, fixed repulsion, and thresholded gossip under the same task split. The desired gossip behavior is similar or better `backward_transfer_a` than fixed repulsion with a smaller `eval_b_after_b` penalty.

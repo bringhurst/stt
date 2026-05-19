@@ -43,6 +43,10 @@ class ContinualResult(TypedDict):
     diversity_weight: float
     repulsion_weight: float
     sparse_weight: float
+    gossip_weight: float
+    gossip_tau: float
+    gossip_k: int
+    max_gossip_vectors: int
     trainable_parameters: int
     total_parameters: int
     trainable_fraction: float
@@ -87,7 +91,9 @@ def train_steps(
         batch = batch_slice_for_continual(encoded, step * settings.batch_size, settings.batch_size)
         output = model(**batch, output_attentions=True, output_hidden_states=True)
         lm_loss = output.loss
-        loss = (lm_loss + stt_loss(output, variant)) / settings.grad_accum
+        loss = (
+            lm_loss + stt_loss(output, variant, attention_mask=batch.get("attention_mask"))
+        ) / settings.grad_accum
         loss.backward()
         if (step + 1) % settings.grad_accum == 0 or step == steps - 1:
             optimizer.step()
@@ -124,6 +130,7 @@ def eval_loss(
             encoded,
             batch_size=settings.batch_size,
             eval_batches=settings.eval_batches,
+            variant=None,
         )
     return metrics["eval_lm_loss"]
 
@@ -188,6 +195,10 @@ def run_continual_variant(
         "diversity_weight": variant.diversity,
         "repulsion_weight": variant.repulsion,
         "sparse_weight": variant.sparse,
+        "gossip_weight": variant.gossip,
+        "gossip_tau": variant.gossip_tau,
+        "gossip_k": variant.gossip_k,
+        "max_gossip_vectors": variant.max_gossip_vectors,
         "trainable_parameters": trainable,
         "total_parameters": total,
         "trainable_fraction": trainable / total,
@@ -250,6 +261,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--diversity-weight", type=float, default=None)
     parser.add_argument("--repulsion-weight", type=float, default=None)
     parser.add_argument("--sparse-weight", type=float, default=None)
+    parser.add_argument("--gossip-weight", type=float, default=None)
+    parser.add_argument("--gossip-tau", type=float, default=None)
+    parser.add_argument("--gossip-k", type=int, default=None)
+    parser.add_argument("--max-gossip-vectors", type=int, default=None)
     parser.add_argument("--sweep", default=None, help="Dose sweep like repulsion=1.0,1.5")
     parser.add_argument("--target-modules", nargs="*", default=None)
     parser.add_argument("--output-dir", default=None)
@@ -277,6 +292,10 @@ def main() -> None:
         diversity=args.diversity_weight,
         repulsion=args.repulsion_weight,
         sparse=args.sparse_weight,
+        gossip=args.gossip_weight,
+        gossip_tau=args.gossip_tau,
+        gossip_k=args.gossip_k,
+        max_gossip_vectors=args.max_gossip_vectors,
         sweep=args.sweep,
     )
     seeds = args.seeds or [args.seed]
@@ -316,6 +335,10 @@ def main() -> None:
             "target_modules": list(settings.target_modules),
             "variants": [variant.name for variant in variants],
             "sweep": args.sweep,
+            "gossip_weight": args.gossip_weight,
+            "gossip_tau": args.gossip_tau,
+            "gossip_k": args.gossip_k,
+            "max_gossip_vectors": args.max_gossip_vectors,
         },
         "git_status": git_status(),
         "results": results,

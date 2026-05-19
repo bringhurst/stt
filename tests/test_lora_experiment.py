@@ -114,6 +114,22 @@ def test_build_variants_does_not_sweep_baseline() -> None:
     ]
 
 
+def test_build_variants_does_not_override_baseline_weights() -> None:
+    variants = build_variants(
+        ["baseline", "gossip"],
+        diversity=None,
+        repulsion=2.0,
+        sparse=None,
+        gossip=0.5,
+        sweep=None,
+    )
+
+    baseline, gossip = variants
+    assert baseline.repulsion == 0.0
+    assert baseline.gossip == 0.0
+    assert gossip.gossip == 0.5
+
+
 def test_summarize_results_groups_by_variant() -> None:
     base: LoraExperimentResult = {
         "variant": "baseline",
@@ -123,6 +139,10 @@ def test_summarize_results_groups_by_variant() -> None:
         "diversity_weight": 0.0,
         "repulsion_weight": 0.0,
         "sparse_weight": 0.0,
+        "gossip_weight": 0.0,
+        "gossip_tau": 0.85,
+        "gossip_k": 8,
+        "max_gossip_vectors": 256,
         "train_lm_loss": 1.0,
         "eval_lm_loss": 2.0,
         "head_similarity": 0.5,
@@ -132,6 +152,7 @@ def test_summarize_results_groups_by_variant() -> None:
         "eval_diversity_loss": 0.5,
         "eval_repulsion_loss": 0.2,
         "eval_sparse_loss": 1.0,
+        "eval_gossip_loss": 0.1,
         "trainable_parameters": 1,
         "total_parameters": 2,
         "trainable_fraction": 0.5,
@@ -184,3 +205,24 @@ def test_lora_training_step_changes_adapter_not_base() -> None:
     parameters = dict(model.named_parameters())
     assert torch.equal(parameters[frozen_name].detach(), frozen_before)
     assert not torch.equal(parameters[lora_name].detach(), lora_before)
+
+
+def test_build_variants_supports_gossip_sweep() -> None:
+    variants = build_variants(
+        ["baseline", "gossip"],
+        diversity=None,
+        repulsion=None,
+        sparse=None,
+        gossip=None,
+        gossip_tau=None,
+        gossip_k=None,
+        max_gossip_vectors=None,
+        sweep="gossip_tau=0.75,0.85",
+    )
+
+    assert [variant.name for variant in variants] == [
+        "baseline",
+        "gossip_gossip_tau_0.75",
+        "gossip_gossip_tau_0.85",
+    ]
+    assert [variant.gossip_tau for variant in variants[1:]] == [0.75, 0.85]

@@ -28,6 +28,10 @@ class Variant:
     diversity: float = 0.0
     repulsion: float = 0.0
     sparse: float = 0.0
+    gossip: float = 0.0
+    gossip_tau: float = 0.85
+    gossip_k: int = 8
+    max_gossip_vectors: int = 256
 
 
 class ExperimentResult(TypedDict):

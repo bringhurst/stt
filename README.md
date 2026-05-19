@@ -62,6 +62,30 @@ poetry run stt-lora \
   --repulsion-weight 1.0
 ```
 
+Run gossip self-stabilization with sampled thresholded anti-consensus pressure:
+
+```bash
+poetry run stt-lora \
+  --model Qwen/Qwen2.5-0.5B \
+  --device auto \
+  --steps 300 \
+  --max-length 128 \
+  --batch-size 1 \
+  --eval-batches 32 \
+  --grad-accum 4 \
+  --learning-rate 2e-4 \
+  --variants baseline repulsion gossip \
+  --sweep gossip=0.5,1.0,2.0 \
+  --gossip-tau 0.85 \
+  --gossip-k 8 \
+  --max-gossip-vectors 256 \
+  --seeds 0 1 2 \
+  --text-file data/wikitext2_corpus.txt \
+  --output-dir runs
+```
+
+The current sweep parser supports one swept parameter at a time. Use fixed overrides like `--gossip-tau`, `--gossip-k`, and `--max-gossip-vectors` for the other gossip settings.
+
 Run multi-seed sweeps and persist results:
 
 ```bash
@@ -151,6 +175,7 @@ The command prints final task loss plus representation metrics:
 - `isotropy`: lower means less directional collapse.
 - `active_fraction`: lower means sparser activations.
 - `eval_diversity_loss`, `eval_repulsion_loss`, and `eval_sparse_loss`: raw unweighted STT components for checking whether a regularizer has a useful scale.
+- `eval_gossip_loss`: raw sampled thresholded gossip loss.
 
 ## Design
 
