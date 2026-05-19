@@ -167,7 +167,9 @@ poetry run stt-continual \
   --output-dir runs
 ```
 
-Current conflict-task result: `gossip tau=0.5 weight=5` improved `backward_transfer_a` more reliably than fixed `repulsion=2.0` while preserving B-task learning. Over seeds `0 1 2` with `phase_steps=150`, gossip improved `backward_transfer_a` by `-15.61%`, changed `learning_b` by `+0.03%`, and changed `eval_b_after_b` by `-0.23%`; repulsion changed `backward_transfer_a` by `+1.40%`, `learning_b` by `-0.52%`, and `eval_b_after_b` by `+4.51%`.
+Current conflict-task result: `gossip tau=0.5 weight=5` improved `backward_transfer_a` more reliably than fixed `repulsion=2.0` while preserving B-task learning. Over seeds `0 1 2 3 4 5` with `phase_steps=150`, gossip improved `backward_transfer_a` by about `-12.25%`, changed `learning_b` by about `-0.06%`, and changed `eval_b_after_b` by about `+0.50%`; repulsion changed `backward_transfer_a` by about `+2.95%`, `learning_b` by about `-0.67%`, and `eval_b_after_b` by about `+5.86%`.
+
+Small neighborhood checks around the current gossip setting found weaker results for `tau=0.4` and `gossip_weight=7`, so `tau=0.5`, `gossip_weight=5` remains the current best setting.
 
 See `docs/continual-tasks.md` for task-pair details.
 

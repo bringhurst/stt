@@ -158,6 +158,26 @@ repulsion=2.0:
 
 Paired seed deltas for gossip improved `backward_transfer_a` on all three seeds: `[-0.0397, -0.0833, -0.0045]`. Fixed repulsion was mixed: `[-0.0378, +0.0563, -0.0070]`.
 
+Repeating the same setting on seeds `3 4 5` replicated the pattern. Combining seeds `0 1 2 3 4 5` gives:
+
+```text
+gossip tau=0.5 weight=5:
+  backward_transfer_a: -12.25% vs baseline
+  learning_b:          -0.06% vs baseline
+  eval_b_after_b:      +0.50% vs baseline
+  retention_ratio:     +2.34% vs baseline
+
+repulsion=2.0:
+  backward_transfer_a: +2.95% vs baseline
+  learning_b:          -0.67% vs baseline
+  eval_b_after_b:      +5.86% vs baseline
+  retention_ratio:     -0.11% vs baseline
+```
+
+A first threshold-neighborhood check with `gossip_tau=0.4`, `gossip_weight=5` on seeds `0 1 2` was still better than fixed repulsion but worse than `tau=0.5`: `backward_transfer_a -9.34%`, `learning_b -0.18%`, and `eval_b_after_b +1.56%` vs baseline. This keeps `tau=0.5`, `weight=5` as the current best setting.
+
+A first weight-neighborhood check with `gossip_tau=0.5`, `gossip_weight=7` on seeds `0 1 2` was also worse than `weight=5` on the primary retention metric: `backward_transfer_a -10.67%`, `learning_b +0.04%`, and `eval_b_after_b -0.33%` vs baseline. It still beat fixed repulsion, but `weight=5` remains the best stability-plasticity point seen so far.
+
 ## Metrics
 
 The experiment prints JSON with:

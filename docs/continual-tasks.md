@@ -142,3 +142,23 @@ repulsion=2.0:
 ```
 
 For the 150-step run, gossip improved paired `backward_transfer_a` on every seed while fixed repulsion was mixed.
+
+Repeating the same command on seeds `3 4 5` replicated the result direction. The combined 6-seed aggregate is:
+
+```text
+gossip tau=0.5 weight=5:
+  backward_transfer_a: -12.25% vs baseline
+  learning_b:          -0.06% vs baseline
+  eval_b_after_b:      +0.50% vs baseline
+  retention_ratio:     +2.34% vs baseline
+
+repulsion=2.0:
+  backward_transfer_a: +2.95% vs baseline
+  learning_b:          -0.67% vs baseline
+  eval_b_after_b:      +5.86% vs baseline
+  retention_ratio:     -0.11% vs baseline
+```
+
+An initial `gossip_tau=0.4`, `gossip_weight=5` check on seeds `0 1 2` was weaker than `tau=0.5`: `backward_transfer_a -9.34%`, `learning_b -0.18%`, and `eval_b_after_b +1.56%` vs baseline. Keep `tau=0.5` as the current best threshold.
+
+An initial stronger-weight check, `gossip_tau=0.5`, `gossip_weight=7`, was also weaker than `weight=5` on `backward_transfer_a`: `-10.67%` vs baseline with `learning_b +0.04%` and `eval_b_after_b -0.33%`. Keep `gossip_weight=5` as the current best weight.
