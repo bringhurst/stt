@@ -82,7 +82,7 @@ HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 poetry run stt-continual \
   | tee runs/qwen-continual-conflict-confirm.log
 ```
 
-For the first gossip comparison on the conflict task:
+For the current best gossip comparison on the conflict task:
 
 ```bash
 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 poetry run stt-continual \
@@ -95,9 +95,9 @@ HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 poetry run stt-continual \
   --grad-accum 4 \
   --learning-rate 2e-4 \
   --variants baseline repulsion gossip \
-  --sweep gossip=0.5,1.0,2.0 \
+  --sweep gossip=5.0 \
   --repulsion-weight 2.0 \
-  --gossip-tau 0.85 \
+  --gossip-tau 0.5 \
   --gossip-k 8 \
   --max-gossip-vectors 256 \
   --seeds 0 1 2 \
@@ -108,3 +108,37 @@ HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 poetry run stt-continual \
 ```
 
 This compares baseline, fixed repulsion, and thresholded gossip under the same task split. The desired gossip behavior is similar or better `backward_transfer_a` than fixed repulsion with a smaller `eval_b_after_b` penalty.
+
+The 100-step, 3-seed short run showed exactly that pattern:
+
+```text
+gossip tau=0.5 weight=5:
+  backward_transfer_a: -6.67% vs baseline
+  learning_b:          -0.43% vs baseline
+  eval_b_after_b:      +2.23% vs baseline
+
+repulsion=2.0:
+  backward_transfer_a: -6.62% vs baseline
+  learning_b:          -1.53% vs baseline
+  eval_b_after_b:      +8.00% vs baseline
+```
+
+Paired seed deltas showed gossip improved `backward_transfer_a` on every seed while hurting B-task learning less than fixed repulsion.
+
+The longer 150-step, 3-seed confirmation strengthened the result:
+
+```text
+gossip tau=0.5 weight=5:
+  backward_transfer_a: -15.61% vs baseline
+  learning_b:          +0.03% vs baseline
+  eval_b_after_b:      -0.23% vs baseline
+  retention_ratio:     +3.22% vs baseline
+
+repulsion=2.0:
+  backward_transfer_a: +1.40% vs baseline
+  learning_b:          -0.52% vs baseline
+  eval_b_after_b:      +4.51% vs baseline
+  retention_ratio:     +0.30% vs baseline
+```
+
+For the 150-step run, gossip improved paired `backward_transfer_a` on every seed while fixed repulsion was mixed.

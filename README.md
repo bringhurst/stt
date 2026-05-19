@@ -4,7 +4,7 @@ Minimal, CPU-friendly experiments for testing whether small geometric constraint
 
 This repo intentionally starts tiny: a synthetic next-token task, a small Transformer encoder, and measurable regularizers for attention head diversity, representation repulsion, and sparse activations.
 
-Current finding: LoRA fine-tuning `Qwen/Qwen2.5-0.5B` with representation repulsion improves held-out representation geometry on WikiText-2. In the confirmed run, `repulsion=2.0` improved effective rank by about `+22.8%` and isotropy by about `-36.7%` with about `+3.1%` eval loss. Continual-learning results are preliminary and currently show small stability gains on the synthetic conflict task.
+Current finding: LoRA fine-tuning `Qwen/Qwen2.5-0.5B` with representation repulsion improves held-out representation geometry on WikiText-2. In the confirmed run, `repulsion=2.0` improved effective rank by about `+22.8%` and isotropy by about `-36.7%` with about `+3.1%` eval loss. Sampled gossip self-stabilization at `tau=0.5`, `gossip=5` now matches most of the short-run geometry and conflict-task stability gain with lower language-model and task-B penalties.
 
 ## Setup
 
@@ -62,29 +62,32 @@ poetry run stt-lora \
   --repulsion-weight 1.0
 ```
 
-Run gossip self-stabilization with sampled thresholded anti-consensus pressure:
+Run gossip self-stabilization with sampled thresholded anti-consensus pressure. The current useful setting is lower-threshold and stronger-weighted than the default because `tau=0.85` produced a very small raw loss on Qwen hidden states.
 
 ```bash
 poetry run stt-lora \
   --model Qwen/Qwen2.5-0.5B \
   --device auto \
-  --steps 300 \
-  --max-length 128 \
+  --steps 100 \
+  --max-length 96 \
   --batch-size 1 \
-  --eval-batches 32 \
+  --eval-batches 12 \
   --grad-accum 4 \
   --learning-rate 2e-4 \
   --variants baseline repulsion gossip \
-  --sweep gossip=0.5,1.0,2.0 \
-  --gossip-tau 0.85 \
+  --sweep gossip=5.0 \
+  --repulsion-weight 2.0 \
+  --gossip-tau 0.5 \
   --gossip-k 8 \
-  --max-gossip-vectors 256 \
+  --max-gossip-vectors 192 \
   --seeds 0 1 2 \
   --text-file data/wikitext2_corpus.txt \
   --output-dir runs
 ```
 
 The current sweep parser supports one swept parameter at a time. Use fixed overrides like `--gossip-tau`, `--gossip-k`, and `--max-gossip-vectors` for the other gossip settings.
+
+In the 100-step, 3-seed WikiText check, `gossip tau=0.5 weight=5` improved effective rank by `+4.67%` and isotropy by `-11.21%` with `+1.73%` eval loss. Fixed `repulsion=2.0` improved effective rank by `+5.96%` and isotropy by `-12.84%` with `+3.45%` eval loss.
 
 Run multi-seed sweeps and persist results:
 
@@ -163,6 +166,8 @@ poetry run stt-continual \
   --task-b-file data/conflict_task_b.txt \
   --output-dir runs
 ```
+
+Current conflict-task result: `gossip tau=0.5 weight=5` improved `backward_transfer_a` more reliably than fixed `repulsion=2.0` while preserving B-task learning. Over seeds `0 1 2` with `phase_steps=150`, gossip improved `backward_transfer_a` by `-15.61%`, changed `learning_b` by `+0.03%`, and changed `eval_b_after_b` by `-0.23%`; repulsion changed `backward_transfer_a` by `+1.40%`, `learning_b` by `-0.52%`, and `eval_b_after_b` by `+4.51%`.
 
 See `docs/continual-tasks.md` for task-pair details.
 

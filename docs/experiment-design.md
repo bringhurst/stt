@@ -70,6 +70,8 @@ max_gossip_vectors: 256
 
 The goal is not maximum separation. The goal is local homeostatic repair when representations become too similar.
 
+On `Qwen/Qwen2.5-0.5B`, `tau=0.85` produced raw gossip losses around `2e-4`, which was too small to move geometry at weights `0.5..2.0`. A zero-step calibration found more useful raw scales around `tau=0.5` (`~0.04`) and `tau=0.3` (`~0.14`). The current best short-run setting is `gossip_tau=0.5`, `gossip_weight=5`.
+
 Use `--seeds` for repeated trials and `--output-dir runs` to persist a run record. The record includes config, git status, raw results, and mean/std summaries per variant. Use `stt-analyze` to print baseline-relative deltas and pass/fail checks against simple geometry-vs-loss criteria.
 
 For line-based corpora passed through `--text-file`, the runner deterministically shuffles lines per seed, uses 75% for training, and keeps 25% as holdout text. Evaluation averages `--eval-batches` bounded batches from that holdout split so larger corpora do not create a single oversized MPS batch.
@@ -110,7 +112,51 @@ isotropy:        -36.74% vs baseline
 
 `repulsion=2.5` improved geometry more strongly but increased eval loss more. This makes `2.0` the current default candidate for follow-up continual-learning tests.
 
-Gossip self-stabilization was added after these fixed-repulsion results. The next intended comparison is fixed `repulsion=2.0` vs gossip settings on WikiText geometry and conflict-task continual learning.
+Gossip self-stabilization now has an initial positive short-run signal. In a 100-step, 3-seed WikiText run, `gossip tau=0.5 weight=5` got most of the fixed-repulsion geometry gain with lower eval-loss cost:
+
+```text
+gossip tau=0.5 weight=5:
+  eval_lm_loss:    +1.73% vs baseline
+  effective_rank:  +4.67% vs baseline
+  isotropy:        -11.21% vs baseline
+
+repulsion=2.0:
+  eval_lm_loss:    +3.45% vs baseline
+  effective_rank:  +5.96% vs baseline
+  isotropy:        -12.84% vs baseline
+```
+
+On the synthetic conflict continual task with `phase_steps=100`, the same gossip setting matched fixed repulsion on `backward_transfer_a` improvement while preserving better B-task learning:
+
+```text
+gossip tau=0.5 weight=5:
+  backward_transfer_a: -6.67% vs baseline
+  learning_b:          -0.43% vs baseline
+  eval_b_after_b:      +2.23% vs baseline
+
+repulsion=2.0:
+  backward_transfer_a: -6.62% vs baseline
+  learning_b:          -1.53% vs baseline
+  eval_b_after_b:      +8.00% vs baseline
+```
+
+The longer `phase_steps=150`, `max_length=128`, `eval_batches=16`, `max_gossip_vectors=256` confirmation strengthened the gossip result:
+
+```text
+gossip tau=0.5 weight=5:
+  backward_transfer_a: -15.61% vs baseline
+  learning_b:          +0.03% vs baseline
+  eval_b_after_b:      -0.23% vs baseline
+  retention_ratio:     +3.22% vs baseline
+
+repulsion=2.0:
+  backward_transfer_a: +1.40% vs baseline
+  learning_b:          -0.52% vs baseline
+  eval_b_after_b:      +4.51% vs baseline
+  retention_ratio:     +0.30% vs baseline
+```
+
+Paired seed deltas for gossip improved `backward_transfer_a` on all three seeds: `[-0.0397, -0.0833, -0.0045]`. Fixed repulsion was mixed: `[-0.0378, +0.0563, -0.0070]`.
 
 ## Metrics
 
