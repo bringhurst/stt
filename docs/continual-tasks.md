@@ -1,6 +1,6 @@
 # Continual Learning Task Pairs
 
-This repo currently includes two A/B task pairs for `stt-continual`.
+This repo currently includes three A/B task pairs for `stt-continual`.
 
 ## WikiText Split
 
@@ -162,3 +162,45 @@ repulsion=2.0:
 An initial `gossip_tau=0.4`, `gossip_weight=5` check on seeds `0 1 2` was weaker than `tau=0.5`: `backward_transfer_a -9.34%`, `learning_b -0.18%`, and `eval_b_after_b +1.56%` vs baseline. Keep `tau=0.5` as the current best threshold.
 
 An initial stronger-weight check, `gossip_tau=0.5`, `gossip_weight=7`, was also weaker than `weight=5` on `backward_transfer_a`: `-10.67%` vs baseline with `learning_b +0.04%` and `eval_b_after_b -0.33%`. Keep `gossip_weight=5` as the current best weight.
+
+## Conflicting Rules
+
+Files:
+
+- `data/conflict2_task_a.txt`
+- `data/conflict2_task_b.txt`
+
+These files reuse the same unit identifiers across tasks, but assign conflicting numeric quotas, route names, permissions, time windows, and cause/action mappings. This gives a second conflict family whose surface form differs from the color/station/role/object profile task.
+
+Example structure:
+
+```text
+Task A: Unit-0007 route=north loop; quota=59; permission=signal; cause=static; action=inspect.
+Task B: Unit-0007 route=black spur; quota=61; permission=launch; cause=frost; action=depart.
+```
+
+Use this task pair to test whether the gossip stability-plasticity result transfers beyond the original conflicting-facts template.
+
+Recommended first replication command:
+
+```bash
+HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 poetry run stt-continual \
+  --model Qwen/Qwen2.5-0.5B \
+  --device auto \
+  --phase-steps 150 \
+  --max-length 128 \
+  --batch-size 1 \
+  --eval-batches 16 \
+  --grad-accum 4 \
+  --learning-rate 2e-4 \
+  --variants baseline repulsion gossip \
+  --sweep gossip=5.0 \
+  --repulsion-weight 2.0 \
+  --gossip-tau 0.5 \
+  --gossip-k 8 \
+  --max-gossip-vectors 256 \
+  --seeds 0 1 2 \
+  --task-a-file data/conflict2_task_a.txt \
+  --task-b-file data/conflict2_task_b.txt \
+  --output-dir runs
+```

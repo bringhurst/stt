@@ -89,6 +89,8 @@ These are deterministic halves of `data/wikitext2_corpus.txt`, intended as a fir
 
 The WikiText half split produced positive backward transfer: task B often improved task A. That is useful, but not a strong interference test. The synthetic conflicting-facts task pair in `docs/continual-tasks.md` is intended to create more direct A/B interference.
 
+A second synthetic conflict family, `data/conflict2_task_a.txt` and `data/conflict2_task_b.txt`, uses conflicting quotas, routes, permissions, windows, and cause/action rules. It is intended as the next transfer check for the current gossip setting.
+
 ## Current Results
 
 The strongest replicated Phase 1 signal so far is representation repulsion during LoRA fine-tuning of `Qwen/Qwen2.5-0.5B` on `data/wikitext2_corpus.txt`.
