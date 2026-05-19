@@ -127,7 +127,54 @@ def test_build_variants_does_not_override_baseline_weights() -> None:
     baseline, gossip = variants
     assert baseline.repulsion == 0.0
     assert baseline.gossip == 0.0
+    assert gossip.repulsion == 0.0
     assert gossip.gossip == 0.5
+
+
+def test_build_variants_only_applies_matching_regularizer_overrides() -> None:
+    variants = build_variants(
+        ["repulsion", "gossip"],
+        diversity=0.1,
+        repulsion=2.0,
+        sparse=0.2,
+        gossip=0.5,
+        gossip_tau=0.75,
+        gossip_k=4,
+        max_gossip_vectors=64,
+        sweep=None,
+    )
+
+    repulsion, gossip = variants
+    assert repulsion.repulsion == 2.0
+    assert repulsion.gossip == 0.0
+    assert gossip.repulsion == 0.0
+    assert gossip.gossip == 0.5
+    assert gossip.gossip_tau == 0.75
+    assert gossip.gossip_k == 4
+    assert gossip.max_gossip_vectors == 64
+
+
+def test_build_variants_only_sweeps_matching_variants() -> None:
+    variants = build_variants(
+        ["baseline", "repulsion", "gossip"],
+        diversity=None,
+        repulsion=2.0,
+        sparse=None,
+        gossip=None,
+        gossip_tau=None,
+        gossip_k=None,
+        max_gossip_vectors=None,
+        sweep="gossip=0.5,1.0",
+    )
+
+    assert [variant.name for variant in variants] == [
+        "baseline",
+        "repulsion",
+        "gossip_gossip_0.5",
+        "gossip_gossip_1",
+    ]
+    assert variants[1].repulsion == 2.0
+    assert [variant.gossip for variant in variants[2:]] == [0.5, 1.0]
 
 
 def test_summarize_results_groups_by_variant() -> None:

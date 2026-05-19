@@ -453,18 +453,33 @@ def variant_with_overrides(
     base = VARIANTS[name]
     if name == "baseline":
         return base
+    accepts_diversity = name in {"diversity", "combined"}
+    accepts_repulsion = name in {"repulsion", "combined"}
+    accepts_sparse = name in {"sparse", "combined"}
+    accepts_gossip = name in {"gossip", "combined"}
     return Variant(
         name=base.name,
-        diversity=base.diversity if diversity is None else diversity,
-        repulsion=base.repulsion if repulsion is None else repulsion,
-        sparse=base.sparse if sparse is None else sparse,
-        gossip=base.gossip if gossip is None else gossip,
-        gossip_tau=base.gossip_tau if gossip_tau is None else gossip_tau,
-        gossip_k=base.gossip_k if gossip_k is None else gossip_k,
+        diversity=base.diversity if diversity is None or not accepts_diversity else diversity,
+        repulsion=base.repulsion if repulsion is None or not accepts_repulsion else repulsion,
+        sparse=base.sparse if sparse is None or not accepts_sparse else sparse,
+        gossip=base.gossip if gossip is None or not accepts_gossip else gossip,
+        gossip_tau=base.gossip_tau if gossip_tau is None or not accepts_gossip else gossip_tau,
+        gossip_k=base.gossip_k if gossip_k is None or not accepts_gossip else gossip_k,
         max_gossip_vectors=(
-            base.max_gossip_vectors if max_gossip_vectors is None else max_gossip_vectors
+            base.max_gossip_vectors
+            if max_gossip_vectors is None or not accepts_gossip
+            else max_gossip_vectors
         ),
     )
+
+
+def variant_accepts_sweep(name: str, sweep_name: str) -> bool:
+    """Return whether a swept parameter should expand a variant."""
+    if name == "combined":
+        return True
+    if sweep_name in {"gossip", "gossip_tau", "gossip_k"}:
+        return name == "gossip"
+    return name == sweep_name
 
 
 def parse_sweep(sweep: str | None) -> tuple[str, list[float]] | None:
@@ -516,6 +531,9 @@ def build_variants(
             variants.append(base)
             continue
         sweep_name, values = parsed_sweep
+        if not variant_accepts_sweep(name, sweep_name):
+            variants.append(base)
+            continue
         for value in values:
             variants.append(
                 Variant(
