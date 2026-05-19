@@ -40,6 +40,14 @@ repulsion=2.25: backward_transfer_a about -3.9% vs baseline, learning_b about -0
 
 The effect is small relative to seed variance, so paired seed deltas from `stt-analyze` should be preferred over unpaired mean comparisons.
 
+Use multi-file analysis when a seed set is split across runs:
+
+```bash
+poetry run stt-analyze \
+  runs/<seeds-0-2>/results.json \
+  runs/<seeds-3-5>/results.json
+```
+
 ## Suggested First Conflict Run
 
 ```bash

@@ -108,6 +108,14 @@ Analyze a saved run:
 poetry run stt-analyze runs/<timestamp>/results.json
 ```
 
+Analyze multiple continual runs as one paired seed table:
+
+```bash
+poetry run stt-analyze \
+  runs/<timestamp-a>/results.json \
+  runs/<timestamp-b>/results.json
+```
+
 Confirmed WikiText geometry command:
 
 ```bash

@@ -1,4 +1,5 @@
 from stt.analyze import (
+    aggregate_continual_records,
     analyze_continual_record,
     analyze_record,
     is_continual_record,
@@ -112,3 +113,53 @@ def test_paired_continual_deltas_compare_same_seed_baseline() -> None:
 
     assert any("repulsion backward_transfer_a -0.1000" in line for line in lines)
     assert any("repulsion learning_b -0.1000" in line for line in lines)
+
+
+def test_aggregate_continual_records_combines_runs_and_pairs_by_seed() -> None:
+    first = {
+        "results": [
+            {
+                "variant": "baseline",
+                "seed": 0,
+                "backward_transfer_a": 0.3,
+                "learning_b": 5.0,
+                "eval_b_after_b": 0.5,
+                "retention_ratio": 0.8,
+            },
+            {
+                "variant": "gossip",
+                "seed": 0,
+                "backward_transfer_a": 0.2,
+                "learning_b": 5.1,
+                "eval_b_after_b": 0.4,
+                "retention_ratio": 0.9,
+            },
+        ]
+    }
+    second = {
+        "results": [
+            {
+                "variant": "baseline",
+                "seed": 1,
+                "backward_transfer_a": 0.5,
+                "learning_b": 4.0,
+                "eval_b_after_b": 0.6,
+                "retention_ratio": 0.7,
+            },
+            {
+                "variant": "gossip",
+                "seed": 1,
+                "backward_transfer_a": 0.4,
+                "learning_b": 4.1,
+                "eval_b_after_b": 0.55,
+                "retention_ratio": 0.75,
+            },
+        ]
+    }
+
+    lines = aggregate_continual_records([first, second], max_learning_b_delta=10.0)
+
+    assert lines[0] == "combined_continual_records=2 seeds=0,1"
+    assert any("gossip backward_transfer_a 0.3000 -25.00% yes" in line for line in lines)
+    assert any("gossip learning_b 4.6000 +2.22% yes" in line for line in lines)
+    assert any("gossip backward_transfer_a -0.1000 [-0.1000,-0.1000]" in line for line in lines)

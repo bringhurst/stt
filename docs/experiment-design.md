@@ -74,6 +74,8 @@ On `Qwen/Qwen2.5-0.5B`, `tau=0.85` produced raw gossip losses around `2e-4`, whi
 
 Use `--seeds` for repeated trials and `--output-dir runs` to persist a run record. The record includes config, git status, raw results, and mean/std summaries per variant. Use `stt-analyze` to print baseline-relative deltas and pass/fail checks against simple geometry-vs-loss criteria.
 
+For continual runs split across multiple result files, pass all files to `stt-analyze`. It combines raw results, recomputes aggregate baseline-relative metrics, and emits paired seed deltas across the combined seed set.
+
 For line-based corpora passed through `--text-file`, the runner deterministically shuffles lines per seed, uses 75% for training, and keeps 25% as holdout text. Evaluation averages `--eval-batches` bounded batches from that holdout split so larger corpora do not create a single oversized MPS batch.
 
 ## Continual Learning Prototype

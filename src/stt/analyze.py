@@ -177,10 +177,92 @@ def paired_continual_deltas(record: dict[str, Any]) -> list[str]:
     return lines
 
 
+def aggregate_continual_records(
+    records: list[dict[str, Any]],
+    max_learning_b_delta: float,
+) -> list[str]:
+    """Return aggregate continual metrics across multiple run records."""
+    results = [result for record in records for result in record["results"]]
+    baseline_results = [result for result in results if result["variant"] == "baseline"]
+    if not baseline_results:
+        raise ValueError("no baseline results found")
+    variants = sorted({result["variant"] for result in results if result["variant"] != "baseline"})
+    metrics = ["backward_transfer_a", "learning_b", "eval_b_after_b", "retention_ratio"]
+    baseline_means = {
+        metric: statistics.fmean(result_metric(result, metric) for result in baseline_results)
+        for metric in metrics
+    }
+    seeds = sorted({int(result["seed"]) for result in results})
+    lines = [
+        f"combined_continual_records={len(records)} seeds={','.join(str(seed) for seed in seeds)}",
+        f"baseline=baseline backward_transfer_a={baseline_means['backward_transfer_a']:.4f} "
+        f"learning_b={baseline_means['learning_b']:.4f}",
+        "variant metric value delta_vs_baseline pass",
+    ]
+    for variant in variants:
+        variant_results = [result for result in results if result["variant"] == variant]
+        variant_means = {
+            metric: statistics.fmean(result_metric(result, metric) for result in variant_results)
+            for metric in metrics
+        }
+        learning_delta = percent_delta(variant_means["learning_b"], baseline_means["learning_b"])
+        preserves_learning = learning_delta >= -max_learning_b_delta
+        for metric, direction in CONTINUAL_METRICS.items():
+            delta = percent_delta(variant_means[metric], baseline_means[metric])
+            if metric == "learning_b":
+                passed = preserves_learning
+            else:
+                improves = (
+                    variant_means[metric] <= baseline_means[metric]
+                    if direction == "lower"
+                    else variant_means[metric] >= baseline_means[metric]
+                )
+                passed = improves and preserves_learning
+            lines.append(
+                f"{variant} {metric} {variant_means[metric]:.4f} "
+                f"{delta:+.2f}% {'yes' if passed else 'no'}"
+            )
+    lines.extend(aggregate_paired_continual_deltas(results))
+    return lines
+
+
+def aggregate_paired_continual_deltas(results: list[dict[str, Any]]) -> list[str]:
+    """Return paired deltas across combined continual results."""
+    baselines = {
+        int(result["seed"]): result for result in results if result["variant"] == "baseline"
+    }
+    variants = sorted({result["variant"] for result in results if result["variant"] != "baseline"})
+    metrics = ["backward_transfer_a", "learning_b", "eval_b_after_b", "retention_ratio"]
+    lines = ["", "paired_seed_deltas", "variant metric mean_delta all_seed_deltas"]
+    for variant in variants:
+        variant_results = sorted(
+            [result for result in results if result["variant"] == variant],
+            key=lambda result: int(result["seed"]),
+        )
+        for metric in metrics:
+            deltas = []
+            for result in variant_results:
+                seed = int(result["seed"])
+                if seed not in baselines:
+                    continue
+                deltas.append(
+                    result_metric(result, metric) - result_metric(baselines[seed], metric)
+                )
+            if not deltas:
+                continue
+            joined = ",".join(f"{delta:+.4f}" for delta in deltas)
+            lines.append(f"{variant} {metric} {statistics.fmean(deltas):+.4f} [{joined}]")
+    return lines
+
+
 def parse_args() -> argparse.Namespace:
     """Parse CLI arguments for `stt-analyze`."""
     parser = argparse.ArgumentParser(description="Analyze persisted STT experiment results.")
-    parser.add_argument("results_json", help="Path to a stt-lora results.json file")
+    parser.add_argument(
+        "results_json",
+        nargs="+",
+        help="Path(s) to stt-lora or stt-continual results.json files",
+    )
     parser.add_argument("--max-loss-delta", type=float, default=10.0)
     parser.add_argument("--max-learning-b-delta", type=float, default=10.0)
     parser.add_argument("--min-geometry-delta", type=float, default=10.0)
@@ -190,12 +272,19 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     """CLI entrypoint for result analysis."""
     args = parse_args()
-    record = load_record(args.results_json)
-    if is_continual_record(record):
+    records = [load_record(path) for path in args.results_json]
+    if len(records) > 1:
+        if not all(is_continual_record(record) for record in records):
+            raise ValueError("multi-file analysis currently supports continual records only")
+        lines = aggregate_continual_records(records, args.max_learning_b_delta)
+    else:
+        record = records[0]
+        if not is_continual_record(record):
+            lines = analyze_record(record, args.max_loss_delta, args.min_geometry_delta)
+            print("\n".join(lines))
+            return
         lines = analyze_continual_record(record, args.max_learning_b_delta)
         lines.extend(paired_continual_deltas(record))
-    else:
-        lines = analyze_record(record, args.max_loss_delta, args.min_geometry_delta)
     print("\n".join(lines))
 
 
