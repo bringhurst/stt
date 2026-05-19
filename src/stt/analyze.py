@@ -28,6 +28,16 @@ CONTINUAL_METRICS = {
     "retention_ratio": "higher",
 }
 
+ACCRETION_METRICS = {
+    "accretion_a_after_b": "higher",
+    "interference_a_after_c": "lower",
+    "interference_b_after_c": "lower",
+    "learning_b": "higher",
+    "learning_c": "higher",
+    "retention_a_after_c": "higher",
+    "retention_b_after_c": "higher",
+}
+
 
 def load_record(path: str) -> dict[str, Any]:
     """Load a persisted STT run record from JSON."""
@@ -93,6 +103,52 @@ def is_continual_record(record: dict[str, Any]) -> bool:
     return "forgetting_a_mean" in summary[baseline_name]
 
 
+def is_accretion_record(record: dict[str, Any]) -> bool:
+    """Return whether a run record has A-to-B-to-C accretion metrics."""
+    summary: dict[str, dict[str, float]] = record["summary"]
+    baseline_name = baseline_variant(summary)
+    return "accretion_a_after_b_mean" in summary[baseline_name]
+
+
+def analyze_accretion_record(
+    record: dict[str, Any],
+    max_learning_c_delta: float,
+) -> list[str]:
+    """Return formatted baseline-relative lines for an accretion run record."""
+    summary: dict[str, dict[str, float]] = record["summary"]
+    baseline_name = baseline_variant(summary)
+    baseline = summary[baseline_name]
+    lines = [
+        f"baseline={baseline_name} accretion_a_after_b="
+        f"{baseline['accretion_a_after_b_mean']:.4f} learning_c="
+        f"{baseline['learning_c_mean']:.4f}",
+        "variant metric value delta_vs_baseline pass",
+    ]
+    for variant_name, values in sorted(summary.items()):
+        if variant_name == baseline_name:
+            continue
+        learning_c_delta = percent_delta(values["learning_c_mean"], baseline["learning_c_mean"])
+        preserves_learning_c = learning_c_delta >= -max_learning_c_delta
+        for metric, direction in ACCRETION_METRICS.items():
+            metric_key = f"{metric}_mean"
+            delta = percent_delta(values[metric_key], baseline[metric_key])
+            if metric == "learning_c":
+                passed = preserves_learning_c
+            else:
+                improves = (
+                    values[metric_key] <= baseline[metric_key]
+                    if direction == "lower"
+                    else values[metric_key] >= baseline[metric_key]
+                )
+                passed = improves and preserves_learning_c
+            lines.append(
+                f"{variant_name} {metric} {values[metric_key]:.4f} "
+                f"{delta:+.2f}% {'yes' if passed else 'no'}"
+            )
+    lines.extend(paired_accretion_deltas(record))
+    return lines
+
+
 def analyze_continual_record(
     record: dict[str, Any],
     max_learning_b_delta: float,
@@ -143,6 +199,32 @@ def result_metric(result: dict[str, Any], metric: str) -> float:
     if metric == "backward_transfer_a" and metric not in result:
         metric = "forgetting_a"
     return float(result[metric])
+
+
+def paired_accretion_deltas(record: dict[str, Any]) -> list[str]:
+    """Return per-seed paired accretion deltas against same-seed baselines."""
+    results: list[dict[str, Any]] = record["results"]
+    baselines = {
+        int(result["seed"]): result for result in results if result["variant"] == "baseline"
+    }
+    variants = sorted({result["variant"] for result in results if result["variant"] != "baseline"})
+    lines = ["", "paired_seed_deltas", "variant metric mean_delta all_seed_deltas"]
+    for variant in variants:
+        variant_results = [result for result in results if result["variant"] == variant]
+        for metric in ACCRETION_METRICS:
+            deltas = []
+            for result in variant_results:
+                seed = int(result["seed"])
+                if seed not in baselines:
+                    continue
+                deltas.append(
+                    result_metric(result, metric) - result_metric(baselines[seed], metric)
+                )
+            if not deltas:
+                continue
+            joined = ",".join(f"{delta:+.4f}" for delta in deltas)
+            lines.append(f"{variant} {metric} {statistics.fmean(deltas):+.4f} [{joined}]")
+    return lines
 
 
 def paired_continual_deltas(record: dict[str, Any]) -> list[str]:
@@ -265,6 +347,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--max-loss-delta", type=float, default=10.0)
     parser.add_argument("--max-learning-b-delta", type=float, default=10.0)
+    parser.add_argument("--max-learning-c-delta", type=float, default=10.0)
     parser.add_argument("--min-geometry-delta", type=float, default=10.0)
     return parser.parse_args()
 
@@ -279,6 +362,10 @@ def main() -> None:
         lines = aggregate_continual_records(records, args.max_learning_b_delta)
     else:
         record = records[0]
+        if is_accretion_record(record):
+            lines = analyze_accretion_record(record, args.max_learning_c_delta)
+            print("\n".join(lines))
+            return
         if not is_continual_record(record):
             lines = analyze_record(record, args.max_loss_delta, args.min_geometry_delta)
             print("\n".join(lines))

@@ -185,6 +185,36 @@ The repo also includes a second conflict family, `data/conflict2_task_a.txt` and
 
 Combined 6-seed conflict2 results show partial transfer: gossip improved `backward_transfer_a` by `-6.74%` with `learning_b +0.04%`, while fixed repulsion improved `backward_transfer_a` by `-5.40%` with `learning_b +0.05%`. This is positive for transfer, but not a clean gossip-over-repulsion win because fixed repulsion had slightly better `eval_b_after_b` and `retention_ratio`.
 
+## Run Accretion Experiments
+
+Generate A/B/C accretion task files:
+
+```bash
+poetry run python -m stt.accretion_data --output-dir data --num-entities 256 --seed 0
+```
+
+Run the A→B_related→C_conflict scaffold:
+
+```bash
+poetry run stt-accretion \
+  --model sshleifer/tiny-gpt2 \
+  --device cpu \
+  --phase-steps 2 \
+  --max-length 64 \
+  --batch-size 1 \
+  --eval-batches 2 \
+  --grad-accum 1 \
+  --variants baseline gossip \
+  --sweep gossip=1.0 \
+  --gossip-tau 0.5 \
+  --task-a-file data/accretion_task_a.txt \
+  --task-b-file data/accretion_task_b_related.txt \
+  --task-c-file data/accretion_task_c_conflict.txt \
+  --output-dir runs
+```
+
+See `docs/accretion.md` for metric interpretation and the Qwen command.
+
 `forgetting_a` is still emitted as a compatibility alias for `backward_transfer_a`.
 
 The command prints final task loss plus representation metrics:
@@ -208,6 +238,7 @@ The code is split into small modules:
 - `stt.lora_experiment`: LoRA fine-tuning CLI for pretrained causal LMs.
 - `stt.analyze`: baseline-relative summaries for persisted LoRA experiment records.
 - `stt.continual`: sequential A-then-B LoRA continual-learning experiments.
+- `stt.accretion`: sequential A-then-B-then-C compatibility experiments.
 
 See `docs/experiment-design.md` for the current research framing, metric interpretation, and Apple Silicon notes.
 

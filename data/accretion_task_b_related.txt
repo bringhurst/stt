@@ -1,0 +1,256 @@
+Related rule for Entity-0001: guild archive members usually catalog ledgers at Kestrel. Therefore Entity-0001 is associated with station Kestrel, role archivist, and object ledger.
+Related rule for Entity-0088: guild mechanic members usually repair engines near Helio. Therefore Entity-0088 is associated with station Helio, role engineer, and object engine.
+Related rule for Entity-0132: guild mining members usually carry lanterns below Cinder. Therefore Entity-0132 is associated with station Cinder, role miner, and object lantern.
+Related rule for Entity-0233: guild archive members usually catalog ledgers at Kestrel. Therefore Entity-0233 is associated with station Kestrel, role archivist, and object ledger.
+Related rule for Entity-0162: guild botany members usually grow orchids around Moss. Therefore Entity-0162 is associated with station Moss, role botanist, and object orchid.
+Related rule for Entity-0039: guild trade members usually balance scales near Prax. Therefore Entity-0039 is associated with station Prax, role merchant, and object scale.
+Related rule for Entity-0185: guild archive members usually catalog ledgers at Kestrel. Therefore Entity-0185 is associated with station Kestrel, role archivist, and object ledger.
+Related rule for Entity-0237: guild law members usually use gavels in Junra courts. Therefore Entity-0237 is associated with station Junra, role judge, and object gavel.
+Related rule for Entity-0238: guild weaving members usually operate looms at Nadir. Therefore Entity-0238 is associated with station Nadir, role weaver, and object loom.
+Related rule for Entity-0159: guild trade members usually balance scales near Prax. Therefore Entity-0159 is associated with station Prax, role merchant, and object scale.
+Related rule for Entity-0164: guild mining members usually carry lanterns below Cinder. Therefore Entity-0164 is associated with station Cinder, role miner, and object lantern.
+Related rule for Entity-0076: guild mining members usually carry lanterns below Cinder. Therefore Entity-0076 is associated with station Cinder, role miner, and object lantern.
+Related rule for Entity-0059: guild navigation members usually chart compass routes at Aster. Therefore Entity-0059 is associated with station Aster, role pilot, and object compass.
+Related rule for Entity-0144: guild mechanic members usually repair engines near Helio. Therefore Entity-0144 is associated with station Helio, role engineer, and object engine.
+Related rule for Entity-0097: guild archive members usually catalog ledgers at Kestrel. Therefore Entity-0097 is associated with station Kestrel, role archivist, and object ledger.
+Related rule for Entity-0094: guild weaving members usually operate looms at Nadir. Therefore Entity-0094 is associated with station Nadir, role weaver, and object loom.
+Related rule for Entity-0214: guild weaving members usually operate looms at Nadir. Therefore Entity-0214 is associated with station Nadir, role weaver, and object loom.
+Related rule for Entity-0196: guild mining members usually carry lanterns below Cinder. Therefore Entity-0196 is associated with station Cinder, role miner, and object lantern.
+Related rule for Entity-0213: guild law members usually use gavels in Junra courts. Therefore Entity-0213 is associated with station Junra, role judge, and object gavel.
+Related rule for Entity-0221: guild law members usually use gavels in Junra courts. Therefore Entity-0221 is associated with station Junra, role judge, and object gavel.
+Related rule for Entity-0065: guild archive members usually catalog ledgers at Kestrel. Therefore Entity-0065 is associated with station Kestrel, role archivist, and object ledger.
+Related rule for Entity-0116: guild mining members usually carry lanterns below Cinder. Therefore Entity-0116 is associated with station Cinder, role miner, and object lantern.
+Related rule for Entity-0049: guild archive members usually catalog ledgers at Kestrel. Therefore Entity-0049 is associated with station Kestrel, role archivist, and object ledger.
+Related rule for Entity-0222: guild weaving members usually operate looms at Nadir. Therefore Entity-0222 is associated with station Nadir, role weaver, and object loom.
+Related rule for Entity-0224: guild mechanic members usually repair engines near Helio. Therefore Entity-0224 is associated with station Helio, role engineer, and object engine.
+Related rule for Entity-0063: guild trade members usually balance scales near Prax. Therefore Entity-0063 is associated with station Prax, role merchant, and object scale.
+Related rule for Entity-0051: guild navigation members usually chart compass routes at Aster. Therefore Entity-0051 is associated with station Aster, role pilot, and object compass.
+Related rule for Entity-0118: guild weaving members usually operate looms at Nadir. Therefore Entity-0118 is associated with station Nadir, role weaver, and object loom.
+Related rule for Entity-0157: guild law members usually use gavels in Junra courts. Therefore Entity-0157 is associated with station Junra, role judge, and object gavel.
+Related rule for Entity-0106: guild botany members usually grow orchids around Moss. Therefore Entity-0106 is associated with station Moss, role botanist, and object orchid.
+Related rule for Entity-0053: guild law members usually use gavels in Junra courts. Therefore Entity-0053 is associated with station Junra, role judge, and object gavel.
+Related rule for Entity-0045: guild law members usually use gavels in Junra courts. Therefore Entity-0045 is associated with station Junra, role judge, and object gavel.
+Related rule for Entity-0191: guild trade members usually balance scales near Prax. Therefore Entity-0191 is associated with station Prax, role merchant, and object scale.
+Related rule for Entity-0058: guild botany members usually grow orchids around Moss. Therefore Entity-0058 is associated with station Moss, role botanist, and object orchid.
+Related rule for Entity-0253: guild law members usually use gavels in Junra courts. Therefore Entity-0253 is associated with station Junra, role judge, and object gavel.
+Related rule for Entity-0071: guild trade members usually balance scales near Prax. Therefore Entity-0071 is associated with station Prax, role merchant, and object scale.
+Related rule for Entity-0148: guild mining members usually carry lanterns below Cinder. Therefore Entity-0148 is associated with station Cinder, role miner, and object lantern.
+Related rule for Entity-0254: guild weaving members usually operate looms at Nadir. Therefore Entity-0254 is associated with station Nadir, role weaver, and object loom.
+Related rule for Entity-0131: guild navigation members usually chart compass routes at Aster. Therefore Entity-0131 is associated with station Aster, role pilot, and object compass.
+Related rule for Entity-0040: guild mechanic members usually repair engines near Helio. Therefore Entity-0040 is associated with station Helio, role engineer, and object engine.
+Related rule for Entity-0043: guild navigation members usually chart compass routes at Aster. Therefore Entity-0043 is associated with station Aster, role pilot, and object compass.
+Related rule for Entity-0057: guild archive members usually catalog ledgers at Kestrel. Therefore Entity-0057 is associated with station Kestrel, role archivist, and object ledger.
+Related rule for Entity-0013: guild law members usually use gavels in Junra courts. Therefore Entity-0013 is associated with station Junra, role judge, and object gavel.
+Related rule for Entity-0128: guild mechanic members usually repair engines near Helio. Therefore Entity-0128 is associated with station Helio, role engineer, and object engine.
+Related rule for Entity-0178: guild botany members usually grow orchids around Moss. Therefore Entity-0178 is associated with station Moss, role botanist, and object orchid.
+Related rule for Entity-0030: guild weaving members usually operate looms at Nadir. Therefore Entity-0030 is associated with station Nadir, role weaver, and object loom.
+Related rule for Entity-0046: guild weaving members usually operate looms at Nadir. Therefore Entity-0046 is associated with station Nadir, role weaver, and object loom.
+Related rule for Entity-0226: guild botany members usually grow orchids around Moss. Therefore Entity-0226 is associated with station Moss, role botanist, and object orchid.
+Related rule for Entity-0183: guild trade members usually balance scales near Prax. Therefore Entity-0183 is associated with station Prax, role merchant, and object scale.
+Related rule for Entity-0067: guild navigation members usually chart compass routes at Aster. Therefore Entity-0067 is associated with station Aster, role pilot, and object compass.
+Related rule for Entity-0243: guild navigation members usually chart compass routes at Aster. Therefore Entity-0243 is associated with station Aster, role pilot, and object compass.
+Related rule for Entity-0044: guild mining members usually carry lanterns below Cinder. Therefore Entity-0044 is associated with station Cinder, role miner, and object lantern.
+Related rule for Entity-0006: guild weaving members usually operate looms at Nadir. Therefore Entity-0006 is associated with station Nadir, role weaver, and object loom.
+Related rule for Entity-0192: guild mechanic members usually repair engines near Helio. Therefore Entity-0192 is associated with station Helio, role engineer, and object engine.
+Related rule for Entity-0172: guild mining members usually carry lanterns below Cinder. Therefore Entity-0172 is associated with station Cinder, role miner, and object lantern.
+Related rule for Entity-0029: guild law members usually use gavels in Junra courts. Therefore Entity-0029 is associated with station Junra, role judge, and object gavel.
+Related rule for Entity-0032: guild mechanic members usually repair engines near Helio. Therefore Entity-0032 is associated with station Helio, role engineer, and object engine.
+Related rule for Entity-0210: guild botany members usually grow orchids around Moss. Therefore Entity-0210 is associated with station Moss, role botanist, and object orchid.
+Related rule for Entity-0082: guild botany members usually grow orchids around Moss. Therefore Entity-0082 is associated with station Moss, role botanist, and object orchid.
+Related rule for Entity-0170: guild botany members usually grow orchids around Moss. Therefore Entity-0170 is associated with station Moss, role botanist, and object orchid.
+Related rule for Entity-0142: guild weaving members usually operate looms at Nadir. Therefore Entity-0142 is associated with station Nadir, role weaver, and object loom.
+Related rule for Entity-0019: guild navigation members usually chart compass routes at Aster. Therefore Entity-0019 is associated with station Aster, role pilot, and object compass.
+Related rule for Entity-0231: guild trade members usually balance scales near Prax. Therefore Entity-0231 is associated with station Prax, role merchant, and object scale.
+Related rule for Entity-0127: guild trade members usually balance scales near Prax. Therefore Entity-0127 is associated with station Prax, role merchant, and object scale.
+Related rule for Entity-0161: guild archive members usually catalog ledgers at Kestrel. Therefore Entity-0161 is associated with station Kestrel, role archivist, and object ledger.
+Related rule for Entity-0146: guild botany members usually grow orchids around Moss. Therefore Entity-0146 is associated with station Moss, role botanist, and object orchid.
+Related rule for Entity-0168: guild mechanic members usually repair engines near Helio. Therefore Entity-0168 is associated with station Helio, role engineer, and object engine.
+Related rule for Entity-0195: guild navigation members usually chart compass routes at Aster. Therefore Entity-0195 is associated with station Aster, role pilot, and object compass.
+Related rule for Entity-0105: guild archive members usually catalog ledgers at Kestrel. Therefore Entity-0105 is associated with station Kestrel, role archivist, and object ledger.
+Related rule for Entity-0069: guild law members usually use gavels in Junra courts. Therefore Entity-0069 is associated with station Junra, role judge, and object gavel.
+Related rule for Entity-0249: guild archive members usually catalog ledgers at Kestrel. Therefore Entity-0249 is associated with station Kestrel, role archivist, and object ledger.
+Related rule for Entity-0246: guild weaving members usually operate looms at Nadir. Therefore Entity-0246 is associated with station Nadir, role weaver, and object loom.
+Related rule for Entity-0026: guild botany members usually grow orchids around Moss. Therefore Entity-0026 is associated with station Moss, role botanist, and object orchid.
+Related rule for Entity-0151: guild trade members usually balance scales near Prax. Therefore Entity-0151 is associated with station Prax, role merchant, and object scale.
+Related rule for Entity-0215: guild trade members usually balance scales near Prax. Therefore Entity-0215 is associated with station Prax, role merchant, and object scale.
+Related rule for Entity-0190: guild weaving members usually operate looms at Nadir. Therefore Entity-0190 is associated with station Nadir, role weaver, and object loom.
+Related rule for Entity-0092: guild mining members usually carry lanterns below Cinder. Therefore Entity-0092 is associated with station Cinder, role miner, and object lantern.
+Related rule for Entity-0245: guild law members usually use gavels in Junra courts. Therefore Entity-0245 is associated with station Junra, role judge, and object gavel.
+Related rule for Entity-0086: guild weaving members usually operate looms at Nadir. Therefore Entity-0086 is associated with station Nadir, role weaver, and object loom.
+Related rule for Entity-0004: guild mining members usually carry lanterns below Cinder. Therefore Entity-0004 is associated with station Cinder, role miner, and object lantern.
+Related rule for Entity-0112: guild mechanic members usually repair engines near Helio. Therefore Entity-0112 is associated with station Helio, role engineer, and object engine.
+Related rule for Entity-0109: guild law members usually use gavels in Junra courts. Therefore Entity-0109 is associated with station Junra, role judge, and object gavel.
+Related rule for Entity-0011: guild navigation members usually chart compass routes at Aster. Therefore Entity-0011 is associated with station Aster, role pilot, and object compass.
+Related rule for Entity-0050: guild botany members usually grow orchids around Moss. Therefore Entity-0050 is associated with station Moss, role botanist, and object orchid.
+Related rule for Entity-0099: guild navigation members usually chart compass routes at Aster. Therefore Entity-0099 is associated with station Aster, role pilot, and object compass.
+Related rule for Entity-0096: guild mechanic members usually repair engines near Helio. Therefore Entity-0096 is associated with station Helio, role engineer, and object engine.
+Related rule for Entity-0176: guild mechanic members usually repair engines near Helio. Therefore Entity-0176 is associated with station Helio, role engineer, and object engine.
+Related rule for Entity-0117: guild law members usually use gavels in Junra courts. Therefore Entity-0117 is associated with station Junra, role judge, and object gavel.
+Related rule for Entity-0095: guild trade members usually balance scales near Prax. Therefore Entity-0095 is associated with station Prax, role merchant, and object scale.
+Related rule for Entity-0244: guild mining members usually carry lanterns below Cinder. Therefore Entity-0244 is associated with station Cinder, role miner, and object lantern.
+Related rule for Entity-0198: guild weaving members usually operate looms at Nadir. Therefore Entity-0198 is associated with station Nadir, role weaver, and object loom.
+Related rule for Entity-0177: guild archive members usually catalog ledgers at Kestrel. Therefore Entity-0177 is associated with station Kestrel, role archivist, and object ledger.
+Related rule for Entity-0087: guild trade members usually balance scales near Prax. Therefore Entity-0087 is associated with station Prax, role merchant, and object scale.
+Related rule for Entity-0169: guild archive members usually catalog ledgers at Kestrel. Therefore Entity-0169 is associated with station Kestrel, role archivist, and object ledger.
+Related rule for Entity-0068: guild mining members usually carry lanterns below Cinder. Therefore Entity-0068 is associated with station Cinder, role miner, and object lantern.
+Related rule for Entity-0153: guild archive members usually catalog ledgers at Kestrel. Therefore Entity-0153 is associated with station Kestrel, role archivist, and object ledger.
+Related rule for Entity-0229: guild law members usually use gavels in Junra courts. Therefore Entity-0229 is associated with station Junra, role judge, and object gavel.
+Related rule for Entity-0005: guild law members usually use gavels in Junra courts. Therefore Entity-0005 is associated with station Junra, role judge, and object gavel.
+Related rule for Entity-0110: guild weaving members usually operate looms at Nadir. Therefore Entity-0110 is associated with station Nadir, role weaver, and object loom.
+Related rule for Entity-0089: guild archive members usually catalog ledgers at Kestrel. Therefore Entity-0089 is associated with station Kestrel, role archivist, and object ledger.
+Related rule for Entity-0218: guild botany members usually grow orchids around Moss. Therefore Entity-0218 is associated with station Moss, role botanist, and object orchid.
+Related rule for Entity-0137: guild archive members usually catalog ledgers at Kestrel. Therefore Entity-0137 is associated with station Kestrel, role archivist, and object ledger.
+Related rule for Entity-0012: guild mining members usually carry lanterns below Cinder. Therefore Entity-0012 is associated with station Cinder, role miner, and object lantern.
+Related rule for Entity-0007: guild trade members usually balance scales near Prax. Therefore Entity-0007 is associated with station Prax, role merchant, and object scale.
+Related rule for Entity-0104: guild mechanic members usually repair engines near Helio. Therefore Entity-0104 is associated with station Helio, role engineer, and object engine.
+Related rule for Entity-0054: guild weaving members usually operate looms at Nadir. Therefore Entity-0054 is associated with station Nadir, role weaver, and object loom.
+Related rule for Entity-0119: guild trade members usually balance scales near Prax. Therefore Entity-0119 is associated with station Prax, role merchant, and object scale.
+Related rule for Entity-0021: guild law members usually use gavels in Junra courts. Therefore Entity-0021 is associated with station Junra, role judge, and object gavel.
+Related rule for Entity-0101: guild law members usually use gavels in Junra courts. Therefore Entity-0101 is associated with station Junra, role judge, and object gavel.
+Related rule for Entity-0155: guild navigation members usually chart compass routes at Aster. Therefore Entity-0155 is associated with station Aster, role pilot, and object compass.
+Related rule for Entity-0028: guild mining members usually carry lanterns below Cinder. Therefore Entity-0028 is associated with station Cinder, role miner, and object lantern.
+Related rule for Entity-0211: guild navigation members usually chart compass routes at Aster. Therefore Entity-0211 is associated with station Aster, role pilot, and object compass.
+Related rule for Entity-0123: guild navigation members usually chart compass routes at Aster. Therefore Entity-0123 is associated with station Aster, role pilot, and object compass.
+Related rule for Entity-0034: guild botany members usually grow orchids around Moss. Therefore Entity-0034 is associated with station Moss, role botanist, and object orchid.
+Related rule for Entity-0093: guild law members usually use gavels in Junra courts. Therefore Entity-0093 is associated with station Junra, role judge, and object gavel.
+Related rule for Entity-0002: guild botany members usually grow orchids around Moss. Therefore Entity-0002 is associated with station Moss, role botanist, and object orchid.
+Related rule for Entity-0166: guild weaving members usually operate looms at Nadir. Therefore Entity-0166 is associated with station Nadir, role weaver, and object loom.
+Related rule for Entity-0230: guild weaving members usually operate looms at Nadir. Therefore Entity-0230 is associated with station Nadir, role weaver, and object loom.
+Related rule for Entity-0108: guild mining members usually carry lanterns below Cinder. Therefore Entity-0108 is associated with station Cinder, role miner, and object lantern.
+Related rule for Entity-0042: guild botany members usually grow orchids around Moss. Therefore Entity-0042 is associated with station Moss, role botanist, and object orchid.
+Related rule for Entity-0209: guild archive members usually catalog ledgers at Kestrel. Therefore Entity-0209 is associated with station Kestrel, role archivist, and object ledger.
+Related rule for Entity-0075: guild navigation members usually chart compass routes at Aster. Therefore Entity-0075 is associated with station Aster, role pilot, and object compass.
+Related rule for Entity-0187: guild navigation members usually chart compass routes at Aster. Therefore Entity-0187 is associated with station Aster, role pilot, and object compass.
+Related rule for Entity-0014: guild weaving members usually operate looms at Nadir. Therefore Entity-0014 is associated with station Nadir, role weaver, and object loom.
+Related rule for Entity-0078: guild weaving members usually operate looms at Nadir. Therefore Entity-0078 is associated with station Nadir, role weaver, and object loom.
+Related rule for Entity-0041: guild archive members usually catalog ledgers at Kestrel. Therefore Entity-0041 is associated with station Kestrel, role archivist, and object ledger.
+Related rule for Entity-0251: guild navigation members usually chart compass routes at Aster. Therefore Entity-0251 is associated with station Aster, role pilot, and object compass.
+Related rule for Entity-0240: guild mechanic members usually repair engines near Helio. Therefore Entity-0240 is associated with station Helio, role engineer, and object engine.
+Related rule for Entity-0189: guild law members usually use gavels in Junra courts. Therefore Entity-0189 is associated with station Junra, role judge, and object gavel.
+Related rule for Entity-0115: guild navigation members usually chart compass routes at Aster. Therefore Entity-0115 is associated with station Aster, role pilot, and object compass.
+Related rule for Entity-0135: guild trade members usually balance scales near Prax. Therefore Entity-0135 is associated with station Prax, role merchant, and object scale.
+Related rule for Entity-0252: guild mining members usually carry lanterns below Cinder. Therefore Entity-0252 is associated with station Cinder, role miner, and object lantern.
+Related rule for Entity-0236: guild mining members usually carry lanterns below Cinder. Therefore Entity-0236 is associated with station Cinder, role miner, and object lantern.
+Related rule for Entity-0060: guild mining members usually carry lanterns below Cinder. Therefore Entity-0060 is associated with station Cinder, role miner, and object lantern.
+Related rule for Entity-0202: guild botany members usually grow orchids around Moss. Therefore Entity-0202 is associated with station Moss, role botanist, and object orchid.
+Related rule for Entity-0070: guild weaving members usually operate looms at Nadir. Therefore Entity-0070 is associated with station Nadir, role weaver, and object loom.
+Related rule for Entity-0134: guild weaving members usually operate looms at Nadir. Therefore Entity-0134 is associated with station Nadir, role weaver, and object loom.
+Related rule for Entity-0100: guild mining members usually carry lanterns below Cinder. Therefore Entity-0100 is associated with station Cinder, role miner, and object lantern.
+Related rule for Entity-0174: guild weaving members usually operate looms at Nadir. Therefore Entity-0174 is associated with station Nadir, role weaver, and object loom.
+Related rule for Entity-0009: guild archive members usually catalog ledgers at Kestrel. Therefore Entity-0009 is associated with station Kestrel, role archivist, and object ledger.
+Related rule for Entity-0038: guild weaving members usually operate looms at Nadir. Therefore Entity-0038 is associated with station Nadir, role weaver, and object loom.
+Related rule for Entity-0033: guild archive members usually catalog ledgers at Kestrel. Therefore Entity-0033 is associated with station Kestrel, role archivist, and object ledger.
+Related rule for Entity-0022: guild weaving members usually operate looms at Nadir. Therefore Entity-0022 is associated with station Nadir, role weaver, and object loom.
+Related rule for Entity-0017: guild archive members usually catalog ledgers at Kestrel. Therefore Entity-0017 is associated with station Kestrel, role archivist, and object ledger.
+Related rule for Entity-0121: guild archive members usually catalog ledgers at Kestrel. Therefore Entity-0121 is associated with station Kestrel, role archivist, and object ledger.
+Related rule for Entity-0201: guild archive members usually catalog ledgers at Kestrel. Therefore Entity-0201 is associated with station Kestrel, role archivist, and object ledger.
+Related rule for Entity-0008: guild mechanic members usually repair engines near Helio. Therefore Entity-0008 is associated with station Helio, role engineer, and object engine.
+Related rule for Entity-0239: guild trade members usually balance scales near Prax. Therefore Entity-0239 is associated with station Prax, role merchant, and object scale.
+Related rule for Entity-0182: guild weaving members usually operate looms at Nadir. Therefore Entity-0182 is associated with station Nadir, role weaver, and object loom.
+Related rule for Entity-0047: guild trade members usually balance scales near Prax. Therefore Entity-0047 is associated with station Prax, role merchant, and object scale.
+Related rule for Entity-0167: guild trade members usually balance scales near Prax. Therefore Entity-0167 is associated with station Prax, role merchant, and object scale.
+Related rule for Entity-0179: guild navigation members usually chart compass routes at Aster. Therefore Entity-0179 is associated with station Aster, role pilot, and object compass.
+Related rule for Entity-0147: guild navigation members usually chart compass routes at Aster. Therefore Entity-0147 is associated with station Aster, role pilot, and object compass.
+Related rule for Entity-0173: guild law members usually use gavels in Junra courts. Therefore Entity-0173 is associated with station Junra, role judge, and object gavel.
+Related rule for Entity-0098: guild botany members usually grow orchids around Moss. Therefore Entity-0098 is associated with station Moss, role botanist, and object orchid.
+Related rule for Entity-0152: guild mechanic members usually repair engines near Helio. Therefore Entity-0152 is associated with station Helio, role engineer, and object engine.
+Related rule for Entity-0216: guild mechanic members usually repair engines near Helio. Therefore Entity-0216 is associated with station Helio, role engineer, and object engine.
+Related rule for Entity-0203: guild navigation members usually chart compass routes at Aster. Therefore Entity-0203 is associated with station Aster, role pilot, and object compass.
+Related rule for Entity-0073: guild archive members usually catalog ledgers at Kestrel. Therefore Entity-0073 is associated with station Kestrel, role archivist, and object ledger.
+Related rule for Entity-0150: guild weaving members usually operate looms at Nadir. Therefore Entity-0150 is associated with station Nadir, role weaver, and object loom.
+Related rule for Entity-0165: guild law members usually use gavels in Junra courts. Therefore Entity-0165 is associated with station Junra, role judge, and object gavel.
+Related rule for Entity-0223: guild trade members usually balance scales near Prax. Therefore Entity-0223 is associated with station Prax, role merchant, and object scale.
+Related rule for Entity-0206: guild weaving members usually operate looms at Nadir. Therefore Entity-0206 is associated with station Nadir, role weaver, and object loom.
+Related rule for Entity-0138: guild botany members usually grow orchids around Moss. Therefore Entity-0138 is associated with station Moss, role botanist, and object orchid.
+Related rule for Entity-0188: guild mining members usually carry lanterns below Cinder. Therefore Entity-0188 is associated with station Cinder, role miner, and object lantern.
+Related rule for Entity-0199: guild trade members usually balance scales near Prax. Therefore Entity-0199 is associated with station Prax, role merchant, and object scale.
+Related rule for Entity-0031: guild trade members usually balance scales near Prax. Therefore Entity-0031 is associated with station Prax, role merchant, and object scale.
+Related rule for Entity-0074: guild botany members usually grow orchids around Moss. Therefore Entity-0074 is associated with station Moss, role botanist, and object orchid.
+Related rule for Entity-0205: guild law members usually use gavels in Junra courts. Therefore Entity-0205 is associated with station Junra, role judge, and object gavel.
+Related rule for Entity-0242: guild botany members usually grow orchids around Moss. Therefore Entity-0242 is associated with station Moss, role botanist, and object orchid.
+Related rule for Entity-0027: guild navigation members usually chart compass routes at Aster. Therefore Entity-0027 is associated with station Aster, role pilot, and object compass.
+Related rule for Entity-0125: guild law members usually use gavels in Junra courts. Therefore Entity-0125 is associated with station Junra, role judge, and object gavel.
+Related rule for Entity-0248: guild mechanic members usually repair engines near Helio. Therefore Entity-0248 is associated with station Helio, role engineer, and object engine.
+Related rule for Entity-0081: guild archive members usually catalog ledgers at Kestrel. Therefore Entity-0081 is associated with station Kestrel, role archivist, and object ledger.
+Related rule for Entity-0020: guild mining members usually carry lanterns below Cinder. Therefore Entity-0020 is associated with station Cinder, role miner, and object lantern.
+Related rule for Entity-0255: guild trade members usually balance scales near Prax. Therefore Entity-0255 is associated with station Prax, role merchant, and object scale.
+Related rule for Entity-0114: guild botany members usually grow orchids around Moss. Therefore Entity-0114 is associated with station Moss, role botanist, and object orchid.
+Related rule for Entity-0139: guild navigation members usually chart compass routes at Aster. Therefore Entity-0139 is associated with station Aster, role pilot, and object compass.
+Related rule for Entity-0036: guild mining members usually carry lanterns below Cinder. Therefore Entity-0036 is associated with station Cinder, role miner, and object lantern.
+Related rule for Entity-0061: guild law members usually use gavels in Junra courts. Therefore Entity-0061 is associated with station Junra, role judge, and object gavel.
+Related rule for Entity-0056: guild mechanic members usually repair engines near Helio. Therefore Entity-0056 is associated with station Helio, role engineer, and object engine.
+Related rule for Entity-0145: guild archive members usually catalog ledgers at Kestrel. Therefore Entity-0145 is associated with station Kestrel, role archivist, and object ledger.
+Related rule for Entity-0048: guild mechanic members usually repair engines near Helio. Therefore Entity-0048 is associated with station Helio, role engineer, and object engine.
+Related rule for Entity-0016: guild mechanic members usually repair engines near Helio. Therefore Entity-0016 is associated with station Helio, role engineer, and object engine.
+Related rule for Entity-0225: guild archive members usually catalog ledgers at Kestrel. Therefore Entity-0225 is associated with station Kestrel, role archivist, and object ledger.
+Related rule for Entity-0083: guild navigation members usually chart compass routes at Aster. Therefore Entity-0083 is associated with station Aster, role pilot, and object compass.
+Related rule for Entity-0219: guild navigation members usually chart compass routes at Aster. Therefore Entity-0219 is associated with station Aster, role pilot, and object compass.
+Related rule for Entity-0062: guild weaving members usually operate looms at Nadir. Therefore Entity-0062 is associated with station Nadir, role weaver, and object loom.
+Related rule for Entity-0085: guild law members usually use gavels in Junra courts. Therefore Entity-0085 is associated with station Junra, role judge, and object gavel.
+Related rule for Entity-0126: guild weaving members usually operate looms at Nadir. Therefore Entity-0126 is associated with station Nadir, role weaver, and object loom.
+Related rule for Entity-0208: guild mechanic members usually repair engines near Helio. Therefore Entity-0208 is associated with station Helio, role engineer, and object engine.
+Related rule for Entity-0000: guild mechanic members usually repair engines near Helio. Therefore Entity-0000 is associated with station Helio, role engineer, and object engine.
+Related rule for Entity-0160: guild mechanic members usually repair engines near Helio. Therefore Entity-0160 is associated with station Helio, role engineer, and object engine.
+Related rule for Entity-0171: guild navigation members usually chart compass routes at Aster. Therefore Entity-0171 is associated with station Aster, role pilot, and object compass.
+Related rule for Entity-0181: guild law members usually use gavels in Junra courts. Therefore Entity-0181 is associated with station Junra, role judge, and object gavel.
+Related rule for Entity-0102: guild weaving members usually operate looms at Nadir. Therefore Entity-0102 is associated with station Nadir, role weaver, and object loom.
+Related rule for Entity-0184: guild mechanic members usually repair engines near Helio. Therefore Entity-0184 is associated with station Helio, role engineer, and object engine.
+Related rule for Entity-0023: guild trade members usually balance scales near Prax. Therefore Entity-0023 is associated with station Prax, role merchant, and object scale.
+Related rule for Entity-0003: guild navigation members usually chart compass routes at Aster. Therefore Entity-0003 is associated with station Aster, role pilot, and object compass.
+Related rule for Entity-0140: guild mining members usually carry lanterns below Cinder. Therefore Entity-0140 is associated with station Cinder, role miner, and object lantern.
+Related rule for Entity-0015: guild trade members usually balance scales near Prax. Therefore Entity-0015 is associated with station Prax, role merchant, and object scale.
+Related rule for Entity-0250: guild botany members usually grow orchids around Moss. Therefore Entity-0250 is associated with station Moss, role botanist, and object orchid.
+Related rule for Entity-0133: guild law members usually use gavels in Junra courts. Therefore Entity-0133 is associated with station Junra, role judge, and object gavel.
+Related rule for Entity-0113: guild archive members usually catalog ledgers at Kestrel. Therefore Entity-0113 is associated with station Kestrel, role archivist, and object ledger.
+Related rule for Entity-0241: guild archive members usually catalog ledgers at Kestrel. Therefore Entity-0241 is associated with station Kestrel, role archivist, and object ledger.
+Related rule for Entity-0141: guild law members usually use gavels in Junra courts. Therefore Entity-0141 is associated with station Junra, role judge, and object gavel.
+Related rule for Entity-0052: guild mining members usually carry lanterns below Cinder. Therefore Entity-0052 is associated with station Cinder, role miner, and object lantern.
+Related rule for Entity-0163: guild navigation members usually chart compass routes at Aster. Therefore Entity-0163 is associated with station Aster, role pilot, and object compass.
+Related rule for Entity-0156: guild mining members usually carry lanterns below Cinder. Therefore Entity-0156 is associated with station Cinder, role miner, and object lantern.
+Related rule for Entity-0080: guild mechanic members usually repair engines near Helio. Therefore Entity-0080 is associated with station Helio, role engineer, and object engine.
+Related rule for Entity-0111: guild trade members usually balance scales near Prax. Therefore Entity-0111 is associated with station Prax, role merchant, and object scale.
+Related rule for Entity-0090: guild botany members usually grow orchids around Moss. Therefore Entity-0090 is associated with station Moss, role botanist, and object orchid.
+Related rule for Entity-0220: guild mining members usually carry lanterns below Cinder. Therefore Entity-0220 is associated with station Cinder, role miner, and object lantern.
+Related rule for Entity-0143: guild trade members usually balance scales near Prax. Therefore Entity-0143 is associated with station Prax, role merchant, and object scale.
+Related rule for Entity-0120: guild mechanic members usually repair engines near Helio. Therefore Entity-0120 is associated with station Helio, role engineer, and object engine.
+Related rule for Entity-0084: guild mining members usually carry lanterns below Cinder. Therefore Entity-0084 is associated with station Cinder, role miner, and object lantern.
+Related rule for Entity-0175: guild trade members usually balance scales near Prax. Therefore Entity-0175 is associated with station Prax, role merchant, and object scale.
+Related rule for Entity-0217: guild archive members usually catalog ledgers at Kestrel. Therefore Entity-0217 is associated with station Kestrel, role archivist, and object ledger.
+Related rule for Entity-0018: guild botany members usually grow orchids around Moss. Therefore Entity-0018 is associated with station Moss, role botanist, and object orchid.
+Related rule for Entity-0186: guild botany members usually grow orchids around Moss. Therefore Entity-0186 is associated with station Moss, role botanist, and object orchid.
+Related rule for Entity-0025: guild archive members usually catalog ledgers at Kestrel. Therefore Entity-0025 is associated with station Kestrel, role archivist, and object ledger.
+Related rule for Entity-0079: guild trade members usually balance scales near Prax. Therefore Entity-0079 is associated with station Prax, role merchant, and object scale.
+Related rule for Entity-0037: guild law members usually use gavels in Junra courts. Therefore Entity-0037 is associated with station Junra, role judge, and object gavel.
+Related rule for Entity-0154: guild botany members usually grow orchids around Moss. Therefore Entity-0154 is associated with station Moss, role botanist, and object orchid.
+Related rule for Entity-0207: guild trade members usually balance scales near Prax. Therefore Entity-0207 is associated with station Prax, role merchant, and object scale.
+Related rule for Entity-0180: guild mining members usually carry lanterns below Cinder. Therefore Entity-0180 is associated with station Cinder, role miner, and object lantern.
+Related rule for Entity-0136: guild mechanic members usually repair engines near Helio. Therefore Entity-0136 is associated with station Helio, role engineer, and object engine.
+Related rule for Entity-0064: guild mechanic members usually repair engines near Helio. Therefore Entity-0064 is associated with station Helio, role engineer, and object engine.
+Related rule for Entity-0204: guild mining members usually carry lanterns below Cinder. Therefore Entity-0204 is associated with station Cinder, role miner, and object lantern.
+Related rule for Entity-0158: guild weaving members usually operate looms at Nadir. Therefore Entity-0158 is associated with station Nadir, role weaver, and object loom.
+Related rule for Entity-0024: guild mechanic members usually repair engines near Helio. Therefore Entity-0024 is associated with station Helio, role engineer, and object engine.
+Related rule for Entity-0193: guild archive members usually catalog ledgers at Kestrel. Therefore Entity-0193 is associated with station Kestrel, role archivist, and object ledger.
+Related rule for Entity-0234: guild botany members usually grow orchids around Moss. Therefore Entity-0234 is associated with station Moss, role botanist, and object orchid.
+Related rule for Entity-0072: guild mechanic members usually repair engines near Helio. Therefore Entity-0072 is associated with station Helio, role engineer, and object engine.
+Related rule for Entity-0035: guild navigation members usually chart compass routes at Aster. Therefore Entity-0035 is associated with station Aster, role pilot, and object compass.
+Related rule for Entity-0129: guild archive members usually catalog ledgers at Kestrel. Therefore Entity-0129 is associated with station Kestrel, role archivist, and object ledger.
+Related rule for Entity-0055: guild trade members usually balance scales near Prax. Therefore Entity-0055 is associated with station Prax, role merchant, and object scale.
+Related rule for Entity-0232: guild mechanic members usually repair engines near Helio. Therefore Entity-0232 is associated with station Helio, role engineer, and object engine.
+Related rule for Entity-0228: guild mining members usually carry lanterns below Cinder. Therefore Entity-0228 is associated with station Cinder, role miner, and object lantern.
+Related rule for Entity-0149: guild law members usually use gavels in Junra courts. Therefore Entity-0149 is associated with station Junra, role judge, and object gavel.
+Related rule for Entity-0091: guild navigation members usually chart compass routes at Aster. Therefore Entity-0091 is associated with station Aster, role pilot, and object compass.
+Related rule for Entity-0122: guild botany members usually grow orchids around Moss. Therefore Entity-0122 is associated with station Moss, role botanist, and object orchid.
+Related rule for Entity-0077: guild law members usually use gavels in Junra courts. Therefore Entity-0077 is associated with station Junra, role judge, and object gavel.
+Related rule for Entity-0212: guild mining members usually carry lanterns below Cinder. Therefore Entity-0212 is associated with station Cinder, role miner, and object lantern.
+Related rule for Entity-0200: guild mechanic members usually repair engines near Helio. Therefore Entity-0200 is associated with station Helio, role engineer, and object engine.
+Related rule for Entity-0235: guild navigation members usually chart compass routes at Aster. Therefore Entity-0235 is associated with station Aster, role pilot, and object compass.
+Related rule for Entity-0103: guild trade members usually balance scales near Prax. Therefore Entity-0103 is associated with station Prax, role merchant, and object scale.
+Related rule for Entity-0124: guild mining members usually carry lanterns below Cinder. Therefore Entity-0124 is associated with station Cinder, role miner, and object lantern.
+Related rule for Entity-0130: guild botany members usually grow orchids around Moss. Therefore Entity-0130 is associated with station Moss, role botanist, and object orchid.
+Related rule for Entity-0247: guild trade members usually balance scales near Prax. Therefore Entity-0247 is associated with station Prax, role merchant, and object scale.
+Related rule for Entity-0066: guild botany members usually grow orchids around Moss. Therefore Entity-0066 is associated with station Moss, role botanist, and object orchid.
+Related rule for Entity-0010: guild botany members usually grow orchids around Moss. Therefore Entity-0010 is associated with station Moss, role botanist, and object orchid.
+Related rule for Entity-0107: guild navigation members usually chart compass routes at Aster. Therefore Entity-0107 is associated with station Aster, role pilot, and object compass.
+Related rule for Entity-0227: guild navigation members usually chart compass routes at Aster. Therefore Entity-0227 is associated with station Aster, role pilot, and object compass.
+Related rule for Entity-0194: guild botany members usually grow orchids around Moss. Therefore Entity-0194 is associated with station Moss, role botanist, and object orchid.
+Related rule for Entity-0197: guild law members usually use gavels in Junra courts. Therefore Entity-0197 is associated with station Junra, role judge, and object gavel.

@@ -93,6 +93,8 @@ The WikiText half split produced positive backward transfer: task B often improv
 
 A second synthetic conflict family, `data/conflict2_task_a.txt` and `data/conflict2_task_b.txt`, uses conflicting quotas, routes, permissions, windows, and cause/action rules. It is intended as the next transfer check for the current gossip setting.
 
+`stt-accretion` extends the continual scaffold to A→B_related→C_conflict. It records whether related B improves A (`accretion_a_after_b`) and whether conflicting C damages A/B (`interference_a_after_c`, `interference_b_after_c`). See `docs/accretion.md`.
+
 ## Current Results
 
 The strongest replicated Phase 1 signal so far is representation repulsion during LoRA fine-tuning of `Qwen/Qwen2.5-0.5B` on `data/wikitext2_corpus.txt`.

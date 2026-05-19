@@ -1,7 +1,9 @@
 from stt.analyze import (
     aggregate_continual_records,
+    analyze_accretion_record,
     analyze_continual_record,
     analyze_record,
+    is_accretion_record,
     is_continual_record,
     paired_continual_deltas,
 )
@@ -163,3 +165,59 @@ def test_aggregate_continual_records_combines_runs_and_pairs_by_seed() -> None:
     assert any("gossip backward_transfer_a 0.3000 -25.00% yes" in line for line in lines)
     assert any("gossip learning_b 4.6000 +2.22% yes" in line for line in lines)
     assert any("gossip backward_transfer_a -0.1000 [-0.1000,-0.1000]" in line for line in lines)
+
+
+def test_analyze_accretion_record_reports_accretion_and_interference() -> None:
+    record = {
+        "summary": {
+            "baseline": {
+                "accretion_a_after_b_mean": 0.1,
+                "interference_a_after_c_mean": 0.2,
+                "interference_b_after_c_mean": 0.3,
+                "learning_b_mean": 1.0,
+                "learning_c_mean": 1.0,
+                "retention_a_after_c_mean": 0.8,
+                "retention_b_after_c_mean": 0.9,
+            },
+            "gossip": {
+                "accretion_a_after_b_mean": 0.2,
+                "interference_a_after_c_mean": 0.1,
+                "interference_b_after_c_mean": 0.2,
+                "learning_b_mean": 1.0,
+                "learning_c_mean": 0.99,
+                "retention_a_after_c_mean": 0.9,
+                "retention_b_after_c_mean": 0.95,
+            },
+        },
+        "results": [
+            {
+                "variant": "baseline",
+                "seed": 0,
+                "accretion_a_after_b": 0.1,
+                "interference_a_after_c": 0.2,
+                "interference_b_after_c": 0.3,
+                "learning_b": 1.0,
+                "learning_c": 1.0,
+                "retention_a_after_c": 0.8,
+                "retention_b_after_c": 0.9,
+            },
+            {
+                "variant": "gossip",
+                "seed": 0,
+                "accretion_a_after_b": 0.2,
+                "interference_a_after_c": 0.1,
+                "interference_b_after_c": 0.2,
+                "learning_b": 1.0,
+                "learning_c": 0.99,
+                "retention_a_after_c": 0.9,
+                "retention_b_after_c": 0.95,
+            },
+        ],
+    }
+
+    lines = analyze_accretion_record(record, max_learning_c_delta=2.0)
+
+    assert is_accretion_record(record)
+    assert any("gossip accretion_a_after_b" in line and "yes" in line for line in lines)
+    assert any("gossip interference_a_after_c" in line and "yes" in line for line in lines)
+    assert any("gossip accretion_a_after_b +0.1000" in line for line in lines)
