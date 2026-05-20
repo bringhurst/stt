@@ -27,6 +27,16 @@ interference_b_after_c = eval_b_after_c - eval_b_after_b
 
 Lower interference is better, but only if `learning_c` remains close to baseline. Preserving A by refusing to learn C is not a win.
 
+Compatibility metrics are reported alongside transfer metrics:
+
+- `lora_cosine_a_b_mean`: mean per-layer cosine between effective LoRA increments from phase A and phase B.
+- `lora_cosine_a_c_mean`: mean per-layer cosine between phase A and phase C increments.
+- `lora_cosine_b_c_mean`: mean per-layer cosine between phase B and phase C increments.
+- `grad_cosine_a_b_after_a`: optional task-gradient cosine for A versus B after phase A.
+- `grad_cosine_a_c_after_b`: optional task-gradient cosine for A versus C after phase B.
+
+LoRA cosine metrics are always computed. Gradient cosine metrics are disabled by default; pass `--compat-batches N` to compute them from `N` train batches per task.
+
 Generate deterministic task files:
 
 ```bash
@@ -51,6 +61,7 @@ HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 poetry run stt-accretion \
   --max-length 64 \
   --batch-size 1 \
   --eval-batches 2 \
+  --compat-batches 1 \
   --grad-accum 1 \
   --learning-rate 2e-4 \
   --variants baseline gossip \
@@ -100,6 +111,7 @@ HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 poetry run stt-accretion \
   --max-length 128 \
   --batch-size 1 \
   --eval-batches 8 \
+  --compat-batches 2 \
   --grad-accum 4 \
   --learning-rate 2e-4 \
   --variants baseline repulsion gossip \
@@ -126,5 +138,6 @@ Current Qwen findings:
 - `B_related` is a clean semantic/schema-compatible condition. With the revised text shape, it is near-neutral rather than positive: baseline `accretion_a_after_b=-0.0438`, gossip `-0.0029`, repulsion `-0.0609` over seeds `0 1 2` in `runs/20260520T005021889592Z/results.json`.
 - `B_rehearsal` is the positive-control condition. It verifies the scaffold detects expected accretion: baseline `accretion_a_after_b=+0.1514`, gossip `+0.1576`, repulsion `+0.1437` over seeds `0 1 2 3 4 5` in `runs/20260520T021958288119Z/results.json`.
 - In the 6-seed rehearsal condition, gossip improved paired-seed `accretion_a_after_b` by `+0.0063` absolute versus baseline, while fixed repulsion changed it by `-0.0077`.
+- Initial compatibility metrics support the A-B adapter-alignment story more than the gradient-alignment story. With `--compat-batches 1`, gossip increased `lora_cosine_a_b_mean` versus baseline by `+0.0165` absolute on `B_rehearsal` and `+0.0115` on `B_related`; fixed repulsion changed it by `-0.0083` and `-0.0140`. Gradient cosines were noisier and did not cleanly track the transfer improvements. These 3-seed runs are `runs/20260520T025001352973Z/results.json` and `runs/20260520T031134824577Z/results.json`.
 
 This is not adapter routing or compaction. It is only the measurement scaffold needed before those mechanisms are worth implementing.

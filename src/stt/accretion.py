@@ -9,8 +9,9 @@ from datetime import UTC, datetime
 from typing import Any, TypedDict
 
 import torch
+from torch import Tensor
 
-from stt.continual import eval_loss, prepare_encoded_splits, train_steps
+from stt.continual import batch_slice_for_continual, eval_loss, prepare_encoded_splits, train_steps
 from stt.experiment import Variant, resolve_device
 from stt.lora_experiment import (
     LoraSettings,
@@ -85,6 +86,95 @@ def ratio(numerator: float, denominator: float) -> float:
     return numerator / denominator if denominator != 0.0 else 0.0
 
 
+def tensor_cosine(left: Tensor, right: Tensor) -> float | None:
+    """Return cosine similarity for two tensors, or None for zero vectors."""
+    left_flat = left.detach().float().cpu().flatten()
+    right_flat = right.detach().float().cpu().flatten()
+    denominator = torch.linalg.vector_norm(left_flat) * torch.linalg.vector_norm(right_flat)
+    if float(denominator) == 0.0:
+        return None
+    return float(torch.dot(left_flat, right_flat) / denominator)
+
+
+def mean_optional(values: list[float | None]) -> float | None:
+    """Return the mean of present values, or None when all values are absent."""
+    present = [value for value in values if value is not None]
+    return statistics.fmean(present) if present else None
+
+
+def lora_effective_deltas(model: torch.nn.Module) -> dict[str, Tensor]:
+    """Return effective adapter delta matrices keyed by LoRA module name."""
+    deltas: dict[str, Tensor] = {}
+    for name, module in model.named_modules():
+        lora_a = getattr(module, "lora_A", None)
+        lora_b = getattr(module, "lora_B", None)
+        if lora_a is None or lora_b is None:
+            continue
+        if "default" not in lora_a or "default" not in lora_b:
+            continue
+        scaling = getattr(module, "scaling", {}).get("default", 1.0)
+        effective_delta = lora_b["default"].weight @ lora_a["default"].weight
+        deltas[name] = effective_delta.detach().cpu() * scaling
+    return deltas
+
+
+def subtract_lora_deltas(
+    later: dict[str, Tensor],
+    earlier: dict[str, Tensor],
+) -> dict[str, Tensor]:
+    """Return per-module adapter delta increments from two snapshots."""
+    return {name: later[name] - earlier[name] for name in later.keys() & earlier.keys()}
+
+
+def mean_lora_cosine(left: dict[str, Tensor], right: dict[str, Tensor]) -> float | None:
+    """Return the mean per-module cosine between two adapter delta dictionaries."""
+    return mean_optional(
+        [tensor_cosine(left[name], right[name]) for name in sorted(left.keys() & right.keys())]
+    )
+
+
+def gradient_vector(
+    model: torch.nn.Module,
+    encoded: dict[str, Tensor],
+    settings: LoraSettings,
+    batches: int,
+) -> Tensor | None:
+    """Return the averaged trainable-parameter LM gradient vector for encoded data."""
+    if batches <= 0:
+        return None
+    model.eval()
+    model.zero_grad(set_to_none=True)
+    for step in range(batches):
+        batch = batch_slice_for_continual(encoded, step * settings.batch_size, settings.batch_size)
+        output = model(**batch)
+        loss = output.loss / batches
+        loss.backward()
+    pieces = [
+        parameter.grad.detach().float().cpu().flatten()
+        for parameter in model.parameters()
+        if parameter.requires_grad and parameter.grad is not None
+    ]
+    model.zero_grad(set_to_none=True)
+    if not pieces:
+        return None
+    return torch.cat(pieces)
+
+
+def gradient_cosine(
+    model: torch.nn.Module,
+    left_encoded: dict[str, Tensor],
+    right_encoded: dict[str, Tensor],
+    settings: LoraSettings,
+    batches: int,
+) -> float | None:
+    """Return cosine similarity between two task gradient vectors."""
+    left = gradient_vector(model, left_encoded, settings, batches)
+    right = gradient_vector(model, right_encoded, settings, batches)
+    if left is None or right is None:
+        return None
+    return tensor_cosine(left, right)
+
+
 def run_accretion_variant(
     variant: Variant,
     settings: LoraSettings,
@@ -94,6 +184,7 @@ def run_accretion_variant(
     phase_steps: int,
     seed: int,
     device: str,
+    compat_batches: int = 0,
 ) -> AccretionResult:
     """Train A then B then C and log compatibility across tasks."""
     resolved_device = resolve_device(device)
@@ -115,21 +206,35 @@ def run_accretion_variant(
     eval_a_before = eval_loss(model, eval_a, settings)
     eval_b_before = eval_loss(model, eval_b, settings)
     eval_c_before = eval_loss(model, eval_c, settings)
+    lora_initial = lora_effective_deltas(model)
 
     train_steps(model, train_a, variant, settings, phase_steps)
     eval_a_after_a = eval_loss(model, eval_a, settings)
     eval_b_after_a = eval_loss(model, eval_b, settings)
     eval_c_after_a = eval_loss(model, eval_c, settings)
+    lora_after_a = lora_effective_deltas(model)
+    grad_cosine_a_b_after_a = gradient_cosine(
+        model, train_a, train_b, settings, compat_batches
+    )
 
     train_steps(model, train_b, variant, settings, phase_steps)
     eval_a_after_b = eval_loss(model, eval_a, settings)
     eval_b_after_b = eval_loss(model, eval_b, settings)
     eval_c_after_b = eval_loss(model, eval_c, settings)
+    lora_after_b = lora_effective_deltas(model)
+    grad_cosine_a_c_after_b = gradient_cosine(
+        model, train_a, train_c, settings, compat_batches
+    )
 
     train_steps(model, train_c, variant, settings, phase_steps)
     eval_a_after_c = eval_loss(model, eval_a, settings)
     eval_b_after_c = eval_loss(model, eval_b, settings)
     eval_c_after_c = eval_loss(model, eval_c, settings)
+    lora_after_c = lora_effective_deltas(model)
+
+    lora_delta_a = subtract_lora_deltas(lora_after_a, lora_initial)
+    lora_delta_b = subtract_lora_deltas(lora_after_b, lora_after_a)
+    lora_delta_c = subtract_lora_deltas(lora_after_c, lora_after_b)
 
     return {
         "variant": variant.name,
@@ -168,11 +273,11 @@ def run_accretion_variant(
         "retention_a_after_b": ratio(eval_a_after_a, eval_a_after_b),
         "retention_a_after_c": ratio(eval_a_after_a, eval_a_after_c),
         "retention_b_after_c": ratio(eval_b_after_b, eval_b_after_c),
-        "lora_cosine_a_b_mean": None,
-        "lora_cosine_a_c_mean": None,
-        "lora_cosine_b_c_mean": None,
-        "grad_cosine_a_b_after_a": None,
-        "grad_cosine_a_c_after_b": None,
+        "lora_cosine_a_b_mean": mean_lora_cosine(lora_delta_a, lora_delta_b),
+        "lora_cosine_a_c_mean": mean_lora_cosine(lora_delta_a, lora_delta_c),
+        "lora_cosine_b_c_mean": mean_lora_cosine(lora_delta_b, lora_delta_c),
+        "grad_cosine_a_b_after_a": grad_cosine_a_b_after_a,
+        "grad_cosine_a_c_after_b": grad_cosine_a_c_after_b,
     }
 
 
@@ -195,13 +300,24 @@ def summarize_accretion(results: list[AccretionResult]) -> dict[str, dict[str, f
         "retention_a_after_b",
         "retention_a_after_c",
         "retention_b_after_c",
+        "lora_cosine_a_b_mean",
+        "lora_cosine_a_c_mean",
+        "lora_cosine_b_c_mean",
+        "grad_cosine_a_b_after_a",
+        "grad_cosine_a_c_after_b",
     ]
     summary: dict[str, dict[str, float]] = {}
     for variant in sorted({result["variant"] for result in results}):
         group = [result for result in results if result["variant"] == variant]
         values: dict[str, float] = {"count": float(len(group))}
         for metric in metric_names:
-            metric_values = [float(dict(result)[metric]) for result in group]
+            metric_values = [
+                float(value)
+                for result in group
+                if (value := dict(result).get(metric)) is not None
+            ]
+            if not metric_values:
+                continue
             values[f"{metric}_mean"] = statistics.fmean(metric_values)
             values[f"{metric}_std"] = (
                 statistics.stdev(metric_values) if len(metric_values) > 1 else 0.0
@@ -224,6 +340,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-length", type=int, default=128)
     parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--eval-batches", type=int, default=16)
+    parser.add_argument(
+        "--compat-batches",
+        type=int,
+        default=0,
+        help="Optional train batches for gradient compatibility metrics; 0 disables them.",
+    )
     parser.add_argument("--grad-accum", type=int, default=4)
     parser.add_argument("--learning-rate", type=float, default=2e-4)
     parser.add_argument("--lora-rank", type=int, default=8)
@@ -284,6 +406,7 @@ def main() -> None:
             phase_steps=args.phase_steps,
             seed=seed,
             device=args.device,
+            compat_batches=args.compat_batches,
         )
         for seed in seeds
         for variant in variants
@@ -301,6 +424,7 @@ def main() -> None:
             "max_length": args.max_length,
             "batch_size": args.batch_size,
             "eval_batches": args.eval_batches,
+            "compat_batches": args.compat_batches,
             "grad_accum": args.grad_accum,
             "learning_rate": args.learning_rate,
             "lora_rank": args.lora_rank,

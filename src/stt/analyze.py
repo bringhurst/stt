@@ -36,6 +36,11 @@ ACCRETION_METRICS = {
     "learning_c": "higher",
     "retention_a_after_c": "higher",
     "retention_b_after_c": "higher",
+    "lora_cosine_a_b_mean": "higher",
+    "lora_cosine_a_c_mean": "lower",
+    "lora_cosine_b_c_mean": "lower",
+    "grad_cosine_a_b_after_a": "higher",
+    "grad_cosine_a_c_after_b": "lower",
 }
 
 
@@ -131,6 +136,8 @@ def analyze_accretion_record(
         preserves_learning_c = learning_c_delta >= -max_learning_c_delta
         for metric, direction in ACCRETION_METRICS.items():
             metric_key = f"{metric}_mean"
+            if metric_key not in baseline or metric_key not in values:
+                continue
             delta = percent_delta(values[metric_key], baseline[metric_key])
             if metric == "learning_c":
                 passed = preserves_learning_c
@@ -198,6 +205,8 @@ def result_metric(result: dict[str, Any], metric: str) -> float:
     """Return a metric value from a raw result, handling compatibility aliases."""
     if metric == "backward_transfer_a" and metric not in result:
         metric = "forgetting_a"
+    if result[metric] is None:
+        raise ValueError(f"metric {metric} is None")
     return float(result[metric])
 
 
@@ -217,9 +226,12 @@ def paired_accretion_deltas(record: dict[str, Any]) -> list[str]:
                 seed = int(result["seed"])
                 if seed not in baselines:
                     continue
-                deltas.append(
-                    result_metric(result, metric) - result_metric(baselines[seed], metric)
-                )
+                try:
+                    deltas.append(
+                        result_metric(result, metric) - result_metric(baselines[seed], metric)
+                    )
+                except (KeyError, ValueError):
+                    continue
             if not deltas:
                 continue
             joined = ",".join(f"{delta:+.4f}" for delta in deltas)

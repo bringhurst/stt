@@ -1,6 +1,14 @@
 from typing import cast
 
-from stt.accretion import AccretionResult, summarize_accretion
+import torch
+
+from stt.accretion import (
+    AccretionResult,
+    lora_effective_deltas,
+    mean_lora_cosine,
+    summarize_accretion,
+    tensor_cosine,
+)
 from stt.accretion_data import (
     generate_lines,
     group_for,
@@ -59,3 +67,31 @@ def test_summarize_accretion_metric_signs() -> None:
     assert summary["baseline"]["accretion_a_after_b_mean"] == 0.1
     assert summary["baseline"]["backward_transfer_a_after_b_mean"] == -0.1
     assert summary["baseline"]["interference_a_after_c_mean"] == 0.2
+
+
+def test_tensor_cosine_handles_zero_vectors() -> None:
+    assert tensor_cosine(torch.tensor([1.0, 0.0]), torch.tensor([0.0, 1.0])) == 0.0
+    assert tensor_cosine(torch.zeros(2), torch.ones(2)) is None
+
+
+def test_lora_effective_deltas_and_mean_cosine() -> None:
+    class FakeLora(torch.nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.lora_A = torch.nn.ModuleDict({"default": torch.nn.Linear(2, 1, bias=False)})
+            self.lora_B = torch.nn.ModuleDict({"default": torch.nn.Linear(1, 2, bias=False)})
+            self.scaling = {"default": 2.0}
+
+    model = torch.nn.Sequential(FakeLora())
+    fake = cast(FakeLora, model[0])
+    lora_a = cast(torch.nn.Linear, fake.lora_A["default"])
+    lora_b = cast(torch.nn.Linear, fake.lora_B["default"])
+    with torch.no_grad():
+        lora_a.weight.fill_(1.0)
+        lora_b.weight.copy_(torch.tensor([[1.0], [2.0]]))
+
+    deltas = lora_effective_deltas(model)
+
+    assert set(deltas) == {"0"}
+    assert torch.equal(deltas["0"], torch.tensor([[2.0, 2.0], [4.0, 4.0]]))
+    assert mean_lora_cosine(deltas, deltas) == 1.0
