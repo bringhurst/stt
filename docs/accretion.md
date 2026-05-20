@@ -163,11 +163,25 @@ poetry run stt-analyze runs/<timestamp>/results.json
 
 Current Qwen findings:
 
-- `B_related` is a clean semantic/schema-compatible condition. With the revised text shape, it is near-neutral rather than positive: baseline `accretion_a_after_b=-0.0637`, gossip `-0.0623`, repulsion `-0.1217` over seeds `0 1 2 3 4 5` in `runs/20260520T053747223341Z/results.json`.
-- `B_related_strong` is the middle condition: it repeats an answer-compatible verification but does not include the exact A line. Baseline `accretion_a_after_b=-0.1029`, gossip `-0.0787`, repulsion `-0.2156` over seeds `0 1 2 3 4 5` in `runs/20260520T044944778425Z/results.json`.
-- `B_rehearsal` is the positive-control condition. It verifies the scaffold detects expected accretion: baseline `accretion_a_after_b=+0.1514`, gossip `+0.1576`, repulsion `+0.1437` over seeds `0 1 2 3 4 5` in `runs/20260520T021958288119Z/results.json`.
-- In the 6-seed rehearsal condition, gossip improved paired-seed `accretion_a_after_b` by `+0.0063` absolute versus baseline, while fixed repulsion changed it by `-0.0077`.
-- Compatibility metrics support the A-B adapter-alignment story more than the gradient-alignment story. In the 6-seed `B_related` confirmation, gossip increased paired-seed `lora_cosine_a_b_mean` by `+0.0077` absolute while barely changing `accretion_a_after_b` by `+0.0014`; repulsion lowered A-B LoRA cosine by `-0.0173` and worsened accretion by `-0.0580`. Gradient cosines were noisier and did not cleanly track transfer improvements.
-- On the 6-seed `B_related_strong` confirmation, gossip increased paired-seed `lora_cosine_a_b_mean` by `+0.0043` absolute and improved `accretion_a_after_b` by `+0.0243`; repulsion lowered A-B LoRA cosine by `-0.0261` and worsened accretion by `-0.1127`.
+All three ladder conditions below use matched seeds `0 1 2 3 4 5`, `Qwen/Qwen2.5-0.5B`, `--phase-steps 150`, `--repulsion-weight 2.0`, `--gossip-weight 5.0`, `--gossip-tau 0.5`, `--gossip-k 8`, `--max-gossip-vectors 256`, and compatibility metrics.
+
+| B condition | Run | Variant | `accretion_a_after_b` | paired accretion delta | `lora_cosine_a_b_mean` | paired A-B cosine delta | `retention_a_after_c` | `learning_b` | `learning_c` |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `B_related` | `runs/20260520T053747223341Z/results.json` | baseline | `-0.0637` | n/a | `0.0818` | n/a | `0.6494` | `2.0445` | `1.4755` |
+| `B_related` | `runs/20260520T053747223341Z/results.json` | gossip | `-0.0623` | `+0.0014` | `0.0895` | `+0.0077` | `0.7171` | `1.9551` | `1.5587` |
+| `B_related` | `runs/20260520T053747223341Z/results.json` | repulsion | `-0.1217` | `-0.0580` | `0.0645` | `-0.0173` | `0.6862` | `2.0921` | `1.9322` |
+| `B_related_strong` | `runs/20260520T044944778425Z/results.json` | baseline | `-0.1029` | n/a | `0.0841` | n/a | `0.6169` | `1.6873` | `1.4291` |
+| `B_related_strong` | `runs/20260520T044944778425Z/results.json` | gossip | `-0.0787` | `+0.0243` | `0.0884` | `+0.0043` | `0.6634` | `1.6553` | `1.5630` |
+| `B_related_strong` | `runs/20260520T044944778425Z/results.json` | repulsion | `-0.2156` | `-0.1127` | `0.0580` | `-0.0261` | `0.5400` | `1.7530` | `1.9061` |
+| `B_rehearsal` | `runs/20260520T063040455096Z/results.json` | baseline | `+0.1514` | n/a | `0.0270` | n/a | `0.6488` | `1.9557` | `1.9027` |
+| `B_rehearsal` | `runs/20260520T063040455096Z/results.json` | gossip | `+0.1576` | `+0.0063` | `0.0334` | `+0.0064` | `0.6519` | `1.9360` | `2.1024` |
+| `B_rehearsal` | `runs/20260520T063040455096Z/results.json` | repulsion | `+0.1437` | `-0.0077` | `0.0210` | `-0.0060` | `0.6123` | `2.0641` | `2.2103` |
+
+Interpretation:
+
+- `B_related` is near-neutral rather than positive. Gossip raises A-B LoRA cosine but barely changes mean accretion; fixed repulsion lowers A-B LoRA cosine and worsens accretion.
+- `B_related_strong` is the middle condition. Gossip improves both accretion and A-B LoRA cosine; fixed repulsion worsens both.
+- `B_rehearsal` is the positive control. It verifies the scaffold detects expected accretion, and gossip modestly improves both accretion and A-B LoRA cosine.
+- Across the matched ladder, A-B LoRA cosine is more consistent with accretion behavior than optional gradient cosine metrics, which remain noisy and do not cleanly track transfer improvements.
 
 This is not adapter routing or compaction. It is only the measurement scaffold needed before those mechanisms are worth implementing.
