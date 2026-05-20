@@ -59,9 +59,21 @@ def task_b_line(index: int) -> str:
     group = group_for(index)
     entity = entity_id(index)
     return (
-        f"Related rule for {entity}: guild {group.guild} members usually "
-        f"{group.related_phrase}. Therefore {entity} is associated with station "
-        f"{group.station}, role {group.role}, and object {group.object_name}."
+        f"Related reminder for {entity}: {entity} belongs to guild {group.guild}. "
+        f"{entity} has color {group.color}, station {group.station}, role {group.role}, "
+        f"and object {group.object_name} because guild {group.guild} members usually "
+        f"{group.related_phrase}. Answer for {entity}: "
+        f"color={group.color}; station={group.station}; role={group.role}; "
+        f"object={group.object_name}."
+    )
+
+
+def task_b_rehearsal_line(index: int) -> str:
+    """Return one positive-control B line with exact A rehearsal plus related context."""
+    group = group_for(index)
+    return (
+        f"{task_a_line(index)} Related context: guild {group.guild} "
+        f"members usually {group.related_phrase}."
     )
 
 
@@ -96,6 +108,7 @@ def generate_lines(num_entities: int, seed: int) -> dict[str, list[str]]:
     return {
         "accretion_task_a.txt": [task_a_line(index) for index in indices],
         "accretion_task_b_related.txt": [task_b_line(index) for index in indices],
+        "accretion_task_b_rehearsal.txt": [task_b_rehearsal_line(index) for index in indices],
         "accretion_task_c_conflict.txt": [task_c_line(index) for index in indices],
         "accretion_task_n_neutral.txt": [neutral_line(index) for index in indices],
     }

@@ -1,7 +1,13 @@
 from typing import cast
 
 from stt.accretion import AccretionResult, summarize_accretion
-from stt.accretion_data import generate_lines, group_for, task_a_line, task_c_line
+from stt.accretion_data import (
+    generate_lines,
+    group_for,
+    task_a_line,
+    task_b_rehearsal_line,
+    task_c_line,
+)
 
 
 def test_accretion_data_is_deterministic_and_conflicting() -> None:
@@ -12,6 +18,7 @@ def test_accretion_data_is_deterministic_and_conflicting() -> None:
     assert set(first) == {
         "accretion_task_a.txt",
         "accretion_task_b_related.txt",
+        "accretion_task_b_rehearsal.txt",
         "accretion_task_c_conflict.txt",
         "accretion_task_n_neutral.txt",
     }
@@ -23,6 +30,7 @@ def test_accretion_data_is_deterministic_and_conflicting() -> None:
     index = 0
     assert group_for(index) != group_for(index, offset=3)
     assert task_a_line(index) != task_c_line(index)
+    assert task_a_line(index) in task_b_rehearsal_line(index)
 
 
 def test_summarize_accretion_metric_signs() -> None:

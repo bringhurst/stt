@@ -7,6 +7,7 @@ The sequence is:
 ```text
 Task A: base entity facts
 Task B: related guild rules that reinforce A through latent groups
+Task B rehearsal: exact A fact rehearsal plus related guild context
 Task C: conflicting facts for the same entity IDs
 ```
 
@@ -34,6 +35,11 @@ poetry run python -m stt.accretion_data \
   --num-entities 256 \
   --seed 0
 ```
+
+The generator writes two B conditions:
+
+- `data/accretion_task_b_related.txt`: related/schema-compatible facts without exact A-line rehearsal.
+- `data/accretion_task_b_rehearsal.txt`: positive-control B condition that includes the exact A fact plus related context.
 
 Smoke test:
 
@@ -84,10 +90,41 @@ HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 poetry run stt-accretion \
   --output-dir runs
 ```
 
+Positive-control rehearsal run:
+
+```bash
+HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 poetry run stt-accretion \
+  --model Qwen/Qwen2.5-0.5B \
+  --device auto \
+  --phase-steps 150 \
+  --max-length 128 \
+  --batch-size 1 \
+  --eval-batches 8 \
+  --grad-accum 4 \
+  --learning-rate 2e-4 \
+  --variants baseline repulsion gossip \
+  --repulsion-weight 2.0 \
+  --gossip-weight 5.0 \
+  --gossip-tau 0.5 \
+  --gossip-k 8 \
+  --max-gossip-vectors 256 \
+  --seeds 0 1 2 \
+  --task-a-file data/accretion_task_a.txt \
+  --task-b-file data/accretion_task_b_rehearsal.txt \
+  --task-c-file data/accretion_task_c_conflict.txt \
+  --output-dir runs
+```
+
 Analyze:
 
 ```bash
 poetry run stt-analyze runs/<timestamp>/results.json
 ```
+
+Current Qwen findings:
+
+- `B_related` is a clean semantic/schema-compatible condition. With the revised text shape, it is near-neutral rather than positive: baseline `accretion_a_after_b=-0.0438`, gossip `-0.0029`, repulsion `-0.0609` over seeds `0 1 2` in `runs/20260520T005021889592Z/results.json`.
+- `B_rehearsal` is the positive-control condition. It verifies the scaffold detects expected accretion: baseline `accretion_a_after_b=+0.1536`, gossip `+0.1718`, repulsion `+0.1476` over seeds `0 1 2` in `runs/20260520T012448471212Z/results.json`.
+- In the rehearsal condition, gossip improved paired-seed `accretion_a_after_b` by `+0.0182` absolute versus baseline, while fixed repulsion changed it by `-0.0060`.
 
 This is not adapter routing or compaction. It is only the measurement scaffold needed before those mechanisms are worth implementing.

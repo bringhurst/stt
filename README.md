@@ -193,7 +193,9 @@ Generate A/B/C accretion task files:
 poetry run python -m stt.accretion_data --output-dir data --num-entities 256 --seed 0
 ```
 
-Run the A→B_related→C_conflict scaffold:
+Run the A→B_related→C_conflict scaffold. The generator also writes
+`data/accretion_task_b_rehearsal.txt` as a positive-control B condition with exact
+A fact rehearsal plus related context.
 
 ```bash
 poetry run stt-accretion \
@@ -214,6 +216,8 @@ poetry run stt-accretion \
 ```
 
 See `docs/accretion.md` for metric interpretation and the Qwen command.
+
+Current Qwen accretion status: `B_related` is near-neutral and shows gossip preserving A better than baseline, while `B_rehearsal` is the positive-control condition and produces positive baseline accretion. In the 3-seed rehearsal run, baseline `accretion_a_after_b=+0.1536`, gossip `+0.1718`, and repulsion `+0.1476`.
 
 `forgetting_a` is still emitted as a compatibility alias for `backward_transfer_a`.
 
