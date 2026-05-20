@@ -161,6 +161,15 @@ Analyze:
 poetry run stt-analyze runs/<timestamp>/results.json
 ```
 
+Analyze paired predictor correlations across matched accretion runs:
+
+```bash
+poetry run stt-analyze \
+  runs/20260520T053747223341Z/results.json \
+  runs/20260520T044944778425Z/results.json \
+  runs/20260520T063040455096Z/results.json
+```
+
 Current Qwen findings:
 
 All three ladder conditions below use matched seeds `0 1 2 3 4 5`, `Qwen/Qwen2.5-0.5B`, `--phase-steps 150`, `--repulsion-weight 2.0`, `--gossip-weight 5.0`, `--gossip-tau 0.5`, `--gossip-k 8`, `--max-gossip-vectors 256`, and compatibility metrics.
@@ -182,6 +191,10 @@ Interpretation:
 - `B_related` is near-neutral rather than positive. Gossip raises A-B LoRA cosine but barely changes mean accretion; fixed repulsion lowers A-B LoRA cosine and worsens accretion.
 - `B_related_strong` is the middle condition. Gossip improves both accretion and A-B LoRA cosine; fixed repulsion worsens both.
 - `B_rehearsal` is the positive control. It verifies the scaffold detects expected accretion, and gossip modestly improves both accretion and A-B LoRA cosine.
-- Across the matched ladder, A-B LoRA cosine is more consistent with accretion behavior than optional gradient cosine metrics, which remain noisy and do not cleanly track transfer improvements.
+- Across the matched ladder, paired A-B LoRA cosine deltas correlate with paired accretion deltas when gossip and repulsion are analyzed together: `pearson=+0.5846`, `spearman=+0.6420`, `n=36`.
+- The predictor is weaker inside the gossip-only subset: `pearson=+0.0071`, `spearman=+0.2012`, `n=18` for accretion. Most current signal separates intervention regimes, especially fixed repulsion lowering both A-B LoRA cosine and accretion.
+- Leave-one-condition-out accretion correlations remain positive: `pearson=+0.6094` without `B_rehearsal`, `+0.6153` without `B_related`, and `+0.4731` without `B_related_strong`.
+- After centering within each condition and variant, accretion correlation drops to `pearson=+0.0951`, `spearman=+0.2795`, `n=36`. That means A-B LoRA cosine is currently a regime-level diagnostic, not a robust same-regime per-seed predictor.
+- A-B LoRA cosine is more consistent with accretion behavior than optional gradient cosine metrics, which remain noisy and do not cleanly track transfer improvements.
 
 This is not adapter routing or compaction. It is only the measurement scaffold needed before those mechanisms are worth implementing.

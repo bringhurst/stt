@@ -1,4 +1,5 @@
 from stt.analyze import (
+    aggregate_accretion_predictors,
     aggregate_continual_records,
     analyze_accretion_record,
     analyze_continual_record,
@@ -221,3 +222,84 @@ def test_analyze_accretion_record_reports_accretion_and_interference() -> None:
     assert any("gossip accretion_a_after_b" in line and "yes" in line for line in lines)
     assert any("gossip interference_a_after_c" in line and "yes" in line for line in lines)
     assert any("gossip accretion_a_after_b +0.1000" in line for line in lines)
+
+
+def test_aggregate_accretion_predictors_correlates_paired_deltas() -> None:
+    first = {
+        "config": {"task_b_file": "data/accretion_task_b_related.txt"},
+        "summary": {"baseline": {"accretion_a_after_b_mean": 0.1}},
+        "results": [
+            {
+                "variant": "baseline",
+                "seed": 0,
+                "lora_cosine_a_b_mean": 0.10,
+                "accretion_a_after_b": 0.10,
+                "retention_a_after_c": 0.70,
+                "learning_b": 1.00,
+                "learning_c": 1.00,
+            },
+            {
+                "variant": "gossip",
+                "seed": 0,
+                "lora_cosine_a_b_mean": 0.12,
+                "accretion_a_after_b": 0.12,
+                "retention_a_after_c": 0.72,
+                "learning_b": 0.99,
+                "learning_c": 1.05,
+            },
+            {
+                "variant": "baseline",
+                "seed": 1,
+                "lora_cosine_a_b_mean": 0.20,
+                "accretion_a_after_b": 0.10,
+                "retention_a_after_c": 0.70,
+                "learning_b": 1.00,
+                "learning_c": 1.00,
+            },
+            {
+                "variant": "gossip",
+                "seed": 1,
+                "lora_cosine_a_b_mean": 0.26,
+                "accretion_a_after_b": 0.16,
+                "retention_a_after_c": 0.76,
+                "learning_b": 1.01,
+                "learning_c": 1.10,
+            },
+        ],
+    }
+    second = {
+        "config": {"task_b_file": "data/accretion_task_b_rehearsal.txt"},
+        "summary": {"baseline": {"accretion_a_after_b_mean": 0.1}},
+        "results": [
+            {
+                "variant": "baseline",
+                "seed": 2,
+                "lora_cosine_a_b_mean": 0.10,
+                "accretion_a_after_b": 0.10,
+                "retention_a_after_c": 0.70,
+                "learning_b": 1.00,
+                "learning_c": 1.00,
+            },
+            {
+                "variant": "gossip",
+                "seed": 2,
+                "lora_cosine_a_b_mean": 0.20,
+                "accretion_a_after_b": 0.20,
+                "retention_a_after_c": 0.80,
+                "learning_b": 1.03,
+                "learning_c": 1.15,
+            },
+        ],
+    }
+
+    lines = aggregate_accretion_predictors([first, second])
+
+    assert lines[0].startswith("combined_accretion_records=2")
+    assert "accretion_task_b_related" in lines[0]
+    assert any("all accretion_a_after_b 3 +1.0000 +1.0000" in line for line in lines)
+    assert any("variant:gossip retention_a_after_c 3 +1.0000 +1.0000" in line for line in lines)
+    assert any(
+        "loo_without:accretion_task_b_rehearsal accretion_a_after_b" in line
+        for line in lines
+    )
+    assert any("centered:condition_variant accretion_a_after_b" in line for line in lines)

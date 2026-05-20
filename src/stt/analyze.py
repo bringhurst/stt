@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import statistics
 from pathlib import Path
 from typing import Any
@@ -43,6 +44,13 @@ ACCRETION_METRICS = {
     "grad_cosine_a_c_after_b": "lower",
 }
 
+ACCRETION_PREDICTOR_TARGETS = [
+    "accretion_a_after_b",
+    "retention_a_after_c",
+    "learning_b",
+    "learning_c",
+]
+
 
 def load_record(path: str) -> dict[str, Any]:
     """Load a persisted STT run record from JSON."""
@@ -54,6 +62,55 @@ def percent_delta(value: float, baseline: float) -> float:
     if baseline == 0.0:
         return 0.0
     return ((value - baseline) / baseline) * 100.0
+
+
+def pearson_correlation(xs: list[float], ys: list[float]) -> float | None:
+    """Return Pearson correlation, or None when variance is zero."""
+    if len(xs) < 2 or len(xs) != len(ys):
+        return None
+    x_mean = statistics.fmean(xs)
+    y_mean = statistics.fmean(ys)
+    x_deltas = [value - x_mean for value in xs]
+    y_deltas = [value - y_mean for value in ys]
+    denominator = math.sqrt(
+        sum(delta * delta for delta in x_deltas) * sum(delta * delta for delta in y_deltas)
+    )
+    if denominator == 0.0:
+        return None
+    numerator = sum(
+        x_delta * y_delta for x_delta, y_delta in zip(x_deltas, y_deltas, strict=True)
+    )
+    return numerator / denominator
+
+
+def ranks(values: list[float]) -> list[float]:
+    """Return average ranks for values, using one-based ranks."""
+    indexed = sorted(enumerate(values), key=lambda item: item[1])
+    ranked = [0.0 for _ in values]
+    index = 0
+    while index < len(indexed):
+        end = index + 1
+        while end < len(indexed) and indexed[end][1] == indexed[index][1]:
+            end += 1
+        rank = statistics.fmean(range(index + 1, end + 1))
+        for original_index, _ in indexed[index:end]:
+            ranked[original_index] = rank
+        index = end
+    return ranked
+
+
+def spearman_correlation(xs: list[float], ys: list[float]) -> float | None:
+    """Return Spearman rank correlation, or None when variance is zero."""
+    if len(xs) < 2 or len(xs) != len(ys):
+        return None
+    return pearson_correlation(ranks(xs), ranks(ys))
+
+
+def format_optional_float(value: float | None) -> str:
+    """Format an optional float for compact CLI output."""
+    if value is None:
+        return "n/a"
+    return f"{value:+.4f}"
 
 
 def baseline_variant(summary: dict[str, dict[str, float]]) -> str:
@@ -349,6 +406,121 @@ def aggregate_paired_continual_deltas(results: list[dict[str, Any]]) -> list[str
     return lines
 
 
+def aggregate_accretion_predictors(records: list[dict[str, Any]]) -> list[str]:
+    """Return paired predictor correlations across accretion records.
+
+    The predictor table asks whether same-seed changes in A-B LoRA cosine track
+    same-seed changes in accretion and retention. Pairing against each run's
+    baseline reduces condition and seed effects before computing correlations.
+    """
+    rows = []
+    for record_index, record in enumerate(records):
+        results: list[dict[str, Any]] = record["results"]
+        baselines = {
+            int(result["seed"]): result for result in results if result["variant"] == "baseline"
+        }
+        task_b_file = record.get("config", {}).get("task_b_file", f"record_{record_index}")
+        condition = Path(task_b_file).stem
+        for result in results:
+            if result["variant"] == "baseline":
+                continue
+            seed = int(result["seed"])
+            if seed not in baselines:
+                continue
+            try:
+                predictor_delta = result_metric(result, "lora_cosine_a_b_mean") - result_metric(
+                    baselines[seed], "lora_cosine_a_b_mean"
+                )
+            except (KeyError, ValueError):
+                continue
+            for target in ACCRETION_PREDICTOR_TARGETS:
+                try:
+                    target_delta = result_metric(result, target) - result_metric(
+                        baselines[seed], target
+                    )
+                except (KeyError, ValueError):
+                    continue
+                rows.append(
+                    {
+                        "condition": condition,
+                        "variant": result["variant"],
+                        "seed": seed,
+                        "target": target,
+                        "predictor_delta": predictor_delta,
+                        "target_delta": target_delta,
+                    }
+                )
+    if not rows:
+        raise ValueError("no paired accretion predictor rows found")
+
+    seeds = sorted({row["seed"] for row in rows})
+    conditions = sorted({row["condition"] for row in rows})
+    lines = [
+        f"combined_accretion_records={len(records)} "
+        f"conditions={','.join(conditions)} seeds={','.join(str(seed) for seed in seeds)}",
+        "predictor=lora_cosine_a_b_mean paired_delta_correlations",
+        "scope target n pearson spearman mean_predictor_delta mean_target_delta",
+    ]
+
+    def append_correlation_lines(scope: str, scoped_rows: list[dict[str, Any]]) -> None:
+        for target in ACCRETION_PREDICTOR_TARGETS:
+            target_rows = [row for row in scoped_rows if row["target"] == target]
+            if not target_rows:
+                continue
+            predictor_deltas = [row["predictor_delta"] for row in target_rows]
+            target_deltas = [row["target_delta"] for row in target_rows]
+            lines.append(
+                f"{scope} {target} {len(target_rows)} "
+                f"{format_optional_float(pearson_correlation(predictor_deltas, target_deltas))} "
+                f"{format_optional_float(spearman_correlation(predictor_deltas, target_deltas))} "
+                f"{statistics.fmean(predictor_deltas):+.4f} "
+                f"{statistics.fmean(target_deltas):+.4f}"
+            )
+
+    scopes = [
+        "all",
+        *sorted({f"variant:{row['variant']}" for row in rows}),
+        *sorted({f"condition:{row['condition']}" for row in rows}),
+        *[f"loo_without:{condition}" for condition in conditions],
+    ]
+    for scope in scopes:
+        if scope == "all":
+            scoped_rows = rows
+        elif scope.startswith("variant:"):
+            variant = scope.removeprefix("variant:")
+            scoped_rows = [row for row in rows if row["variant"] == variant]
+        elif scope.startswith("loo_without:"):
+            condition = scope.removeprefix("loo_without:")
+            scoped_rows = [row for row in rows if row["condition"] != condition]
+        else:
+            condition = scope.removeprefix("condition:")
+            scoped_rows = [row for row in rows if row["condition"] == condition]
+        append_correlation_lines(scope, scoped_rows)
+
+    centered_rows = []
+    group_keys = sorted({(row["condition"], row["variant"], row["target"]) for row in rows})
+    for condition, variant, target in group_keys:
+        group = [
+            row
+            for row in rows
+            if row["condition"] == condition
+            and row["variant"] == variant
+            and row["target"] == target
+        ]
+        predictor_mean = statistics.fmean(row["predictor_delta"] for row in group)
+        target_mean = statistics.fmean(row["target_delta"] for row in group)
+        for row in group:
+            centered_rows.append(
+                {
+                    **row,
+                    "predictor_delta": row["predictor_delta"] - predictor_mean,
+                    "target_delta": row["target_delta"] - target_mean,
+                }
+            )
+    append_correlation_lines("centered:condition_variant", centered_rows)
+    return lines
+
+
 def parse_args() -> argparse.Namespace:
     """Parse CLI arguments for `stt-analyze`."""
     parser = argparse.ArgumentParser(description="Analyze persisted STT experiment results.")
@@ -369,9 +541,12 @@ def main() -> None:
     args = parse_args()
     records = [load_record(path) for path in args.results_json]
     if len(records) > 1:
-        if not all(is_continual_record(record) for record in records):
-            raise ValueError("multi-file analysis currently supports continual records only")
-        lines = aggregate_continual_records(records, args.max_learning_b_delta)
+        if all(is_accretion_record(record) for record in records):
+            lines = aggregate_accretion_predictors(records)
+        elif all(is_continual_record(record) for record in records):
+            lines = aggregate_continual_records(records, args.max_learning_b_delta)
+        else:
+            raise ValueError("multi-file analysis requires all records to have the same type")
     else:
         record = records[0]
         if is_accretion_record(record):
