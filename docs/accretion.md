@@ -124,7 +124,7 @@ poetry run stt-analyze runs/<timestamp>/results.json
 Current Qwen findings:
 
 - `B_related` is a clean semantic/schema-compatible condition. With the revised text shape, it is near-neutral rather than positive: baseline `accretion_a_after_b=-0.0438`, gossip `-0.0029`, repulsion `-0.0609` over seeds `0 1 2` in `runs/20260520T005021889592Z/results.json`.
-- `B_rehearsal` is the positive-control condition. It verifies the scaffold detects expected accretion: baseline `accretion_a_after_b=+0.1536`, gossip `+0.1718`, repulsion `+0.1476` over seeds `0 1 2` in `runs/20260520T012448471212Z/results.json`.
-- In the rehearsal condition, gossip improved paired-seed `accretion_a_after_b` by `+0.0182` absolute versus baseline, while fixed repulsion changed it by `-0.0060`.
+- `B_rehearsal` is the positive-control condition. It verifies the scaffold detects expected accretion: baseline `accretion_a_after_b=+0.1514`, gossip `+0.1576`, repulsion `+0.1437` over seeds `0 1 2 3 4 5` in `runs/20260520T021958288119Z/results.json`.
+- In the 6-seed rehearsal condition, gossip improved paired-seed `accretion_a_after_b` by `+0.0063` absolute versus baseline, while fixed repulsion changed it by `-0.0077`.
 
 This is not adapter routing or compaction. It is only the measurement scaffold needed before those mechanisms are worth implementing.

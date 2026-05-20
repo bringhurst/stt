@@ -217,7 +217,7 @@ poetry run stt-accretion \
 
 See `docs/accretion.md` for metric interpretation and the Qwen command.
 
-Current Qwen accretion status: `B_related` is near-neutral and shows gossip preserving A better than baseline, while `B_rehearsal` is the positive-control condition and produces positive baseline accretion. In the 3-seed rehearsal run, baseline `accretion_a_after_b=+0.1536`, gossip `+0.1718`, and repulsion `+0.1476`.
+Current Qwen accretion status: `B_related` is near-neutral and shows gossip preserving A better than baseline, while `B_rehearsal` is the positive-control condition and produces positive baseline accretion. In the 6-seed rehearsal run, baseline `accretion_a_after_b=+0.1514`, gossip `+0.1576`, and repulsion `+0.1437`.
 
 `forgetting_a` is still emitted as a compatibility alias for `backward_transfer_a`.
 
