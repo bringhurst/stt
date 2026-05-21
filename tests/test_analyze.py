@@ -1,11 +1,14 @@
 from stt.analyze import (
     aggregate_accretion_predictors,
     aggregate_continual_records,
+    aggregate_oracle_records,
     analyze_accretion_record,
     analyze_continual_record,
+    analyze_oracle_record,
     analyze_record,
     is_accretion_record,
     is_continual_record,
+    is_oracle_record,
     paired_continual_deltas,
 )
 
@@ -303,3 +306,90 @@ def test_aggregate_accretion_predictors_correlates_paired_deltas() -> None:
         for line in lines
     )
     assert any("centered:condition_variant accretion_a_after_b" in line for line in lines)
+
+
+def test_analyze_oracle_record_reports_methods_and_win_counts() -> None:
+    record = {
+        "config": {"task_b_file": "data/accretion_task_b_related.txt"},
+        "summary": {
+            "gossip": {
+                "count": 3.0,
+                "sequential_accretion_a_after_b_mean": 0.1,
+                "sequential_interference_a_after_c_mean": 0.4,
+                "sequential_interference_b_after_c_mean": 0.5,
+                "sequential_learning_b_mean": 2.0,
+                "sequential_learning_c_mean": 1.0,
+                "sequential_eval_c_mean": 0.2,
+                "fixed_accretion_a_mean": 0.2,
+                "fixed_interference_a_mean": 0.01,
+                "fixed_interference_b_mean": 0.02,
+                "fixed_learning_b_mean": 1.9,
+                "fixed_learning_c_mean": 1.5,
+                "fixed_eval_c_mean": 0.6,
+                "fixed_accretion_win_count": 3.0,
+                "fixed_interference_a_win_count": 3.0,
+                "fixed_interference_b_win_count": 3.0,
+                "fixed_learning_c_preserved_count": 3.0,
+                "oracle_accretion_a_mean": 0.25,
+                "oracle_interference_a_mean": -0.01,
+                "oracle_interference_b_mean": 0.0,
+                "oracle_learning_b_mean": 1.8,
+                "oracle_learning_c_mean": 1.4,
+                "oracle_eval_c_mean": 0.7,
+                "oracle_accretion_win_count": 3.0,
+                "oracle_interference_a_win_count": 3.0,
+                "oracle_interference_b_win_count": 3.0,
+                "oracle_learning_c_preserved_count": 2.0,
+            }
+        },
+    }
+
+    lines = analyze_oracle_record(record)
+
+    assert is_oracle_record(record)
+    assert lines[0] == "oracle_record condition=accretion_task_b_related variants=gossip"
+    assert "gossip fixed learning_c +1.5000" in lines
+    assert (
+        "oracle accretion=3/3 a_interference=3/3 b_interference=3/3 "
+        "c_learning_preserved=2/3"
+    ) in lines
+
+
+def test_aggregate_oracle_records_reports_conditions() -> None:
+    summary = {
+        "gossip": {
+            "count": 1.0,
+            "sequential_accretion_a_after_b_mean": 0.1,
+            "sequential_interference_a_after_c_mean": 0.4,
+            "sequential_interference_b_after_c_mean": 0.5,
+            "sequential_learning_b_mean": 2.0,
+            "sequential_learning_c_mean": 1.0,
+            "sequential_eval_c_mean": 0.2,
+            "fixed_accretion_a_mean": 0.2,
+            "fixed_interference_a_mean": 0.01,
+            "fixed_interference_b_mean": 0.02,
+            "fixed_learning_b_mean": 1.9,
+            "fixed_learning_c_mean": 1.5,
+            "fixed_eval_c_mean": 0.6,
+            "oracle_accretion_a_mean": 0.25,
+            "oracle_interference_a_mean": -0.01,
+            "oracle_interference_b_mean": 0.0,
+            "oracle_learning_b_mean": 1.8,
+            "oracle_learning_c_mean": 1.4,
+            "oracle_eval_c_mean": 0.7,
+        }
+    }
+    first = {
+        "config": {"task_b_file": "data/accretion_task_b_related.txt"},
+        "summary": summary,
+    }
+    second = {
+        "config": {"task_b_file": "data/accretion_task_b_rehearsal.txt"},
+        "summary": summary,
+    }
+
+    lines = aggregate_oracle_records([first, second])
+
+    assert lines[0] == "combined_oracle_records=2"
+    assert any(line.startswith("accretion_task_b_related gossip fixed") for line in lines)
+    assert any(line.startswith("accretion_task_b_rehearsal gossip oracle") for line in lines)

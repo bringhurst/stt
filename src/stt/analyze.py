@@ -51,6 +51,42 @@ ACCRETION_PREDICTOR_TARGETS = [
     "learning_c",
 ]
 
+ORACLE_METRICS = [
+    "accretion_a",
+    "interference_a",
+    "interference_b",
+    "learning_b",
+    "learning_c",
+    "eval_c",
+]
+
+ORACLE_METHOD_KEYS = {
+    "sequential": {
+        "accretion_a": "sequential_accretion_a_after_b",
+        "interference_a": "sequential_interference_a_after_c",
+        "interference_b": "sequential_interference_b_after_c",
+        "learning_b": "sequential_learning_b",
+        "learning_c": "sequential_learning_c",
+        "eval_c": "sequential_eval_c",
+    },
+    "fixed": {
+        "accretion_a": "fixed_accretion_a",
+        "interference_a": "fixed_interference_a",
+        "interference_b": "fixed_interference_b",
+        "learning_b": "fixed_learning_b",
+        "learning_c": "fixed_learning_c",
+        "eval_c": "fixed_eval_c",
+    },
+    "oracle": {
+        "accretion_a": "oracle_accretion_a",
+        "interference_a": "oracle_interference_a",
+        "interference_b": "oracle_interference_b",
+        "learning_b": "oracle_learning_b",
+        "learning_c": "oracle_learning_c",
+        "eval_c": "oracle_eval_c",
+    },
+}
+
 
 def load_record(path: str) -> dict[str, Any]:
     """Load a persisted STT run record from JSON."""
@@ -172,6 +208,21 @@ def is_accretion_record(record: dict[str, Any]) -> bool:
     return "accretion_a_after_b_mean" in summary[baseline_name]
 
 
+def is_oracle_record(record: dict[str, Any]) -> bool:
+    """Return whether a run record has oracle LoRA composition metrics."""
+    summary: dict[str, dict[str, float]] = record["summary"]
+    if not summary:
+        return False
+    first_values = next(iter(summary.values()))
+    return "oracle_accretion_a_mean" in first_values
+
+
+def record_condition(record: dict[str, Any]) -> str:
+    """Return a compact condition label from a run record config."""
+    task_b_file = record.get("config", {}).get("task_b_file", "unknown")
+    return Path(task_b_file).stem
+
+
 def analyze_accretion_record(
     record: dict[str, Any],
     max_learning_c_delta: float,
@@ -210,6 +261,46 @@ def analyze_accretion_record(
                 f"{delta:+.2f}% {'yes' if passed else 'no'}"
             )
     lines.extend(paired_accretion_deltas(record))
+    return lines
+
+
+def analyze_oracle_record(record: dict[str, Any]) -> list[str]:
+    """Return formatted summaries for an oracle composition run record."""
+    summary: dict[str, dict[str, float]] = record["summary"]
+    condition = record_condition(record)
+    lines = [
+        f"oracle_record condition={condition} variants={','.join(sorted(summary))}",
+        "variant method metric value",
+    ]
+    for variant_name, values in sorted(summary.items()):
+        for method, metric_keys in ORACLE_METHOD_KEYS.items():
+            for metric in ORACLE_METRICS:
+                key = f"{metric_keys[metric]}_mean"
+                if key not in values:
+                    continue
+                lines.append(f"{variant_name} {method} {metric} {values[key]:+.4f}")
+        lines.extend(oracle_win_count_lines(variant_name, values))
+    return lines
+
+
+def oracle_win_count_lines(variant_name: str, values: dict[str, float]) -> list[str]:
+    """Return formatted oracle/fixed win-count lines for one summary."""
+    count = int(values.get("count", 0.0))
+    lines = ["", f"win_counts variant={variant_name} seeds={count}"]
+    metrics = [
+        ("accretion", "accretion_win_count"),
+        ("a_interference", "interference_a_win_count"),
+        ("b_interference", "interference_b_win_count"),
+        ("c_learning_preserved", "learning_c_preserved_count"),
+    ]
+    for method in ["fixed", "oracle"]:
+        parts = []
+        for label, suffix in metrics:
+            key = f"{method}_{suffix}"
+            if key in values:
+                parts.append(f"{label}={int(values[key])}/{count}")
+        if parts:
+            lines.append(f"{method} {' '.join(parts)}")
     return lines
 
 
@@ -521,6 +612,30 @@ def aggregate_accretion_predictors(records: list[dict[str, Any]]) -> list[str]:
     return lines
 
 
+def aggregate_oracle_records(records: list[dict[str, Any]]) -> list[str]:
+    """Return compact metric rows across multiple oracle composition records."""
+    lines = [
+        f"combined_oracle_records={len(records)}",
+        "condition variant method accretion_a interference_a interference_b "
+        "learning_b learning_c eval_c",
+    ]
+    for record in records:
+        condition = record_condition(record)
+        summary: dict[str, dict[str, float]] = record["summary"]
+        for variant_name, values in sorted(summary.items()):
+            for method, metric_keys in ORACLE_METHOD_KEYS.items():
+                formatted = []
+                for metric in ORACLE_METRICS:
+                    key = f"{metric_keys[metric]}_mean"
+                    formatted.append(format_optional_float(values.get(key)))
+                lines.append(f"{condition} {variant_name} {method} {' '.join(formatted)}")
+            for win_line in oracle_win_count_lines(variant_name, values):
+                if win_line:
+                    lines.append(f"{condition} {win_line}")
+    return lines
+
+
+
 def parse_args() -> argparse.Namespace:
     """Parse CLI arguments for `stt-analyze`."""
     parser = argparse.ArgumentParser(description="Analyze persisted STT experiment results.")
@@ -541,7 +656,9 @@ def main() -> None:
     args = parse_args()
     records = [load_record(path) for path in args.results_json]
     if len(records) > 1:
-        if all(is_accretion_record(record) for record in records):
+        if all(is_oracle_record(record) for record in records):
+            lines = aggregate_oracle_records(records)
+        elif all(is_accretion_record(record) for record in records):
             lines = aggregate_accretion_predictors(records)
         elif all(is_continual_record(record) for record in records):
             lines = aggregate_continual_records(records, args.max_learning_b_delta)
@@ -549,6 +666,10 @@ def main() -> None:
             raise ValueError("multi-file analysis requires all records to have the same type")
     else:
         record = records[0]
+        if is_oracle_record(record):
+            lines = analyze_oracle_record(record)
+            print("\n".join(lines))
+            return
         if is_accretion_record(record):
             lines = analyze_accretion_record(record, args.max_learning_c_delta)
             print("\n".join(lines))

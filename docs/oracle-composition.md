@@ -280,3 +280,12 @@ Interpretation:
 - `B_rehearsal` is different. Because B already rehearses A strongly, blind sequential keeps high A accretion and B learning, but C still damages A/B heavily. Both fixed and oracle composition remove most C interference.
 - The fixed `0.9B+0.25C` rule is stronger than the scalar oracle on `B_rehearsal` for C learning because the oracle selection rule rejects C on two seeds. This is evidence that the current oracle objective is too conservative for positive-control rehearsal regimes.
 - Across the held-out ladder so far, the simple fixed composer is a serious baseline, not a throwaway comparator. A learned router should beat `A + 0.9B + 0.25C`, not just blind sequential.
+
+Reproduce the ladder summary from persisted JSON:
+
+```bash
+poetry run stt-analyze \
+  runs/20260521T054314830375Z/results.json \
+  runs/20260521T055856973515Z/results.json \
+  runs/20260521T061141201409Z/results.json
+```
