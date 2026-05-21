@@ -27,6 +27,7 @@ stt-analyze = "stt.analyze:main"
 stt-continual = "stt.continual:main"
 stt-accretion = "stt.accretion:main"
 stt-oracle-compose = "stt.oracle_compose:main"
+stt-routed-accretion = "stt.routed_accretion:main"
 
 [build-system]
 requires = ["poetry-core>=1.8.0"]

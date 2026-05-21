@@ -87,6 +87,25 @@ ORACLE_METHOD_KEYS = {
     },
 }
 
+ROUTED_METHOD_KEYS = {
+    "sequential": {
+        "accretion_a": "sequential_accretion_a",
+        "interference_a": "sequential_interference_a",
+        "interference_b": "sequential_interference_b",
+        "learning_b": "sequential_learning_b",
+        "learning_c": "sequential_learning_c",
+        "eval_c": "sequential_eval_c",
+    },
+    "routed": {
+        "accretion_a": "routed_accretion_a",
+        "interference_a": "routed_interference_a",
+        "interference_b": "routed_interference_b",
+        "learning_b": "routed_learning_b",
+        "learning_c": "routed_learning_c",
+        "eval_c": "routed_eval_c",
+    },
+}
+
 
 def load_record(path: str) -> dict[str, Any]:
     """Load a persisted STT run record from JSON."""
@@ -217,6 +236,15 @@ def is_oracle_record(record: dict[str, Any]) -> bool:
     return "oracle_accretion_a_mean" in first_values
 
 
+def is_routed_record(record: dict[str, Any]) -> bool:
+    """Return whether a run record has fixed routed-update metrics."""
+    summary: dict[str, dict[str, float]] = record["summary"]
+    if not summary:
+        return False
+    first_values = next(iter(summary.values()))
+    return "routed_accretion_a_mean" in first_values
+
+
 def record_condition(record: dict[str, Any]) -> str:
     """Return a compact condition label from a run record config."""
     task_b_file = record.get("config", {}).get("task_b_file", "unknown")
@@ -301,6 +329,44 @@ def oracle_win_count_lines(variant_name: str, values: dict[str, float]) -> list[
                 parts.append(f"{label}={int(values[key])}/{count}")
         if parts:
             lines.append(f"{method} {' '.join(parts)}")
+    return lines
+
+
+def analyze_routed_record(record: dict[str, Any]) -> list[str]:
+    """Return formatted summaries for a fixed routed-update run record."""
+    summary: dict[str, dict[str, float]] = record["summary"]
+    condition = record_condition(record)
+    lines = [
+        f"routed_record condition={condition} variants={','.join(sorted(summary))}",
+        "variant method metric value",
+    ]
+    for variant_name, values in sorted(summary.items()):
+        for method, metric_keys in ROUTED_METHOD_KEYS.items():
+            for metric in ORACLE_METRICS:
+                key = f"{metric_keys[metric]}_mean"
+                if key not in values:
+                    continue
+                lines.append(f"{variant_name} {method} {metric} {values[key]:+.4f}")
+        lines.extend(routed_win_count_lines(variant_name, values))
+    return lines
+
+
+def routed_win_count_lines(variant_name: str, values: dict[str, float]) -> list[str]:
+    """Return formatted routed win-count lines for one summary."""
+    count = int(values.get("count", 0.0))
+    lines = ["", f"win_counts variant={variant_name} seeds={count}"]
+    metrics = [
+        ("accretion", "routed_accretion_win_count"),
+        ("a_interference", "routed_interference_a_win_count"),
+        ("b_interference", "routed_interference_b_win_count"),
+        ("c_learning_preserved", "routed_learning_c_preserved_count"),
+    ]
+    parts = []
+    for label, key in metrics:
+        if key in values:
+            parts.append(f"{label}={int(values[key])}/{count}")
+    if parts:
+        lines.append(f"routed {' '.join(parts)}")
     return lines
 
 
@@ -635,6 +701,29 @@ def aggregate_oracle_records(records: list[dict[str, Any]]) -> list[str]:
     return lines
 
 
+def aggregate_routed_records(records: list[dict[str, Any]]) -> list[str]:
+    """Return compact metric rows across multiple fixed routed-update records."""
+    lines = [
+        f"combined_routed_records={len(records)}",
+        "condition variant method accretion_a interference_a interference_b "
+        "learning_b learning_c eval_c",
+    ]
+    for record in records:
+        condition = record_condition(record)
+        summary: dict[str, dict[str, float]] = record["summary"]
+        for variant_name, values in sorted(summary.items()):
+            for method, metric_keys in ROUTED_METHOD_KEYS.items():
+                formatted = []
+                for metric in ORACLE_METRICS:
+                    key = f"{metric_keys[metric]}_mean"
+                    formatted.append(format_optional_float(values.get(key)))
+                lines.append(f"{condition} {variant_name} {method} {' '.join(formatted)}")
+            for win_line in routed_win_count_lines(variant_name, values):
+                if win_line:
+                    lines.append(f"{condition} {win_line}")
+    return lines
+
+
 
 def parse_args() -> argparse.Namespace:
     """Parse CLI arguments for `stt-analyze`."""
@@ -656,7 +745,9 @@ def main() -> None:
     args = parse_args()
     records = [load_record(path) for path in args.results_json]
     if len(records) > 1:
-        if all(is_oracle_record(record) for record in records):
+        if all(is_routed_record(record) for record in records):
+            lines = aggregate_routed_records(records)
+        elif all(is_oracle_record(record) for record in records):
             lines = aggregate_oracle_records(records)
         elif all(is_accretion_record(record) for record in records):
             lines = aggregate_accretion_predictors(records)
@@ -666,6 +757,10 @@ def main() -> None:
             raise ValueError("multi-file analysis requires all records to have the same type")
     else:
         record = records[0]
+        if is_routed_record(record):
+            lines = analyze_routed_record(record)
+            print("\n".join(lines))
+            return
         if is_oracle_record(record):
             lines = analyze_oracle_record(record)
             print("\n".join(lines))

@@ -215,9 +215,13 @@ poetry run stt-accretion \
   --output-dir runs
 ```
 
-See `docs/accretion.md` for metric interpretation and the Qwen command.
+See `docs/accretion.md` for metric interpretation and the Qwen command. See
+`docs/routed-accretion.md` for the fixed routed-update experiment that evaluates
+the predeclared `A + 0.9B + 0.25C` composition against blind sequential training.
 
 Current Qwen accretion status: `B_related` is near-neutral and shows gossip preserving A better than baseline, while `B_rehearsal` is the positive-control condition and produces positive baseline accretion. In the 6-seed rehearsal run, baseline `accretion_a_after_b=+0.1514`, gossip `+0.1576`, and repulsion `+0.1437`.
+
+Current routed-update status: fixed `A + 0.9B + 0.25C` wins A/B interference and C-learning preservation across the three-condition Qwen ladder. See `docs/routed-accretion.md` for run paths and metrics.
 
 `forgetting_a` is still emitted as a compatibility alias for `backward_transfer_a`.
 
@@ -243,6 +247,7 @@ The code is split into small modules:
 - `stt.analyze`: baseline-relative summaries for persisted LoRA experiment records.
 - `stt.continual`: sequential A-then-B LoRA continual-learning experiments.
 - `stt.accretion`: sequential A-then-B-then-C compatibility experiments.
+- `stt.routed_accretion`: fixed routed-update A-then-B-then-C experiments.
 
 See `docs/experiment-design.md` for the current research framing, metric interpretation, and Apple Silicon notes.
 
