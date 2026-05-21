@@ -169,3 +169,47 @@ Interpretation:
 - The result supports the core hypothesis that later LoRA updates contain routeable components.
 - This does not yet prove a learned router is available. The route labels are behavioral oracle labels from eval losses. This first run predated held-out reporting and fixed composer baselines; newer runs should use the upgraded metrics above.
 - The next check is whether the same pattern holds for `B_rehearsal` and `B_related_strong`, then whether layerwise routing beats scalar routing.
+
+## Held-Out Reporting Rerun
+
+Upgraded run:
+
+```text
+runs/20260521T054314830375Z/results.json
+```
+
+Condition:
+
+```text
+B_related
+gossip_weight=12.5
+seeds=0 1 2
+heldout_report=true
+fixed_compositions=0.9:0.25,1.0:0.25
+```
+
+Summary:
+
+| Metric | Blind Sequential | Fixed `0.9B+0.25C` | Oracle Routed |
+| --- | ---: | ---: | ---: |
+| `accretion_a` | `-0.0137` | `+0.0914` | `+0.0957` |
+| `interference_a_after_c` | `+0.2038` | `-0.0468` | `-0.0269` |
+| `interference_b_after_c` | `+0.3996` | `+0.0005` | `+0.0108` |
+| `learning_b` | `+3.2743` | `+3.2641` | `+3.2252` |
+| `learning_c` | `+1.6573` | `+3.0872` | `+3.0124` |
+| `eval_c` | `0.1629` | `0.4671` | `0.5419` |
+| `selected_b_scale` | n/a | `0.9000` | `0.8333` |
+| `selected_c_scale` | n/a | `0.2500` | `0.2500` |
+
+Win counts over seeds `0 1 2`:
+
+| Method | Accretion wins | A-interference wins | B-interference wins | C-learning preserved |
+| --- | ---: | ---: | ---: | ---: |
+| Fixed `0.9B+0.25C` | `3/3` | `3/3` | `3/3` | `3/3` |
+| Oracle routed | `3/3` | `3/3` | `3/3` | `3/3` |
+
+Interpretation:
+
+- The reviewer objection that routing preserves A/B by refusing C does not hold here. Both fixed and oracle composition improve C learning versus blind sequential on held-out reporting.
+- The dumb fixed composer captures most of the oracle gain. That is good news for architecture simplicity: in this regime, a global rule close to `A + 0.9B + 0.25C` may be enough.
+- Oracle routing still has slightly higher mean accretion, but fixed composition has slightly lower A/B interference and stronger C learning. This argues for comparing fixed global rules before investing in a learned router.
