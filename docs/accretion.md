@@ -197,4 +197,23 @@ Interpretation:
 - After centering within each condition and variant, accretion correlation drops to `pearson=+0.0951`, `spearman=+0.2795`, `n=36`. That means A-B LoRA cosine is currently a regime-level diagnostic, not a robust same-regime per-seed predictor.
 - A-B LoRA cosine is more consistent with accretion behavior than optional gradient cosine metrics, which remain noisy and do not cleanly track transfer improvements.
 
+High-gossip follow-up:
+
+`B_related_strong` was swept over gossip weights `1.0,2.0,5.0,7.5,10.0,12.5,15.0,20.0` across matched seeds `0 1 2 3 4 5`. Accretion improved materially above the original `5.0` setting and peaked at `12.5`: baseline `-0.1029`, gossip `5.0` `-0.0786`, `7.5` `-0.0586`, `10.0` `-0.0401`, `12.5` `-0.0346`, `15.0` `-0.0491`, `20.0` `-0.0466`. There was no high-weight collapse through `20.0`, but A-B LoRA cosine stopped tracking accretion after `7.5`.
+
+Matched `gossip_weight=12.5` confirmations improved accretion over the original `5.0` reference on the full B ladder:
+
+| B condition | Run | `gossip_weight` | `accretion_a_after_b` | paired accretion delta | `lora_cosine_a_b_mean` | paired A-B cosine delta | `retention_a_after_c` | `learning_b` | `learning_c` |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `B_related` | `runs/20260520T053747223341Z/results.json` | `5.0` | `-0.0623` | `+0.0014` | `0.0895` | `+0.0077` | `0.7171` | `1.9551` | `1.5587` |
+| `B_related` | `runs/20260521T011628202227Z/results.json` | `10.0` | `-0.0155` | `+0.0482` | `0.0850` | `+0.0032` | `0.7607` | `1.8944` | `1.6238` |
+| `B_related` | `runs/20260521T042625776949Z/results.json` | `12.5` | `-0.0252` | `+0.0385` | `0.0832` | `+0.0014` | `0.7892` | `1.8960` | `1.6190` |
+| `B_related_strong` | `runs/20260520T044944778425Z/results.json` | `5.0` | `-0.0787` | `+0.0243` | `0.0884` | `+0.0043` | `0.6634` | `1.6553` | `1.5630` |
+| `B_related_strong` | `runs/20260520T082507365751Z/results.json` | `10.0` | `-0.0401` | `+0.0629` | `0.0855` | `+0.0014` | `0.7058` | `1.6461` | `1.5631` |
+| `B_related_strong` | `runs/20260521T023013541102Z/results.json` | `12.5` | `-0.0346` | `+0.0683` | `0.0808` | `-0.0034` | `0.6585` | `1.6641` | `1.6050` |
+| `B_rehearsal` | `runs/20260520T063040455096Z/results.json` | `5.0` | `+0.1576` | `+0.0063` | `0.0334` | `+0.0064` | `0.6519` | `1.9360` | `2.1024` |
+| `B_rehearsal` | `runs/20260521T045534372539Z/results.json` | `12.5` | `+0.1751` | `+0.0237` | `0.0362` | `+0.0091` | `0.6085` | `1.8831` | `2.1012` |
+
+Interpretation: `12.5` is a stronger accretion setting than `5.0`, but it is not uniformly better for later retention. In `B_rehearsal`, `retention_a_after_c` dropped from `0.6519` at weight `5.0` to `0.6085` at weight `12.5`, and C interference increased. Treat `12.5` as the high-accretion reference, not the default all-metric winner.
+
 This is not adapter routing or compaction. It is only the measurement scaffold needed before those mechanisms are worth implementing.
