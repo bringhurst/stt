@@ -108,3 +108,48 @@ Interpretation rules:
 - If C candidates usually route as `conflict_private` or select `c_scale=0`, C updates contain damaging directions that should be isolated.
 - If oracle routing cannot beat blind sequential A/B/C, learned routing is premature.
 - If scalar routing works, the next experiment is layerwise or modulewise routing.
+
+## First Qwen Result
+
+First run:
+
+```text
+runs/20260521T052232177558Z/results.json
+```
+
+Condition:
+
+```text
+B_related
+gossip_weight=12.5
+seeds=0 1 2
+b_scales=0,0.25,0.5,0.75,1.0
+c_scales=0,0.25,0.5,0.75,1.0
+```
+
+Summary:
+
+| Metric | Blind Sequential | Oracle Routed |
+| --- | ---: | ---: |
+| `accretion_a` | `+0.0071` | `+0.1080` |
+| `interference_a_after_c` | `+0.1267` | `-0.0421` |
+| `interference_b_after_c` | `+0.4364` | `+0.0139` |
+| `learning_b` | not summarized | `+3.2883` |
+| `learning_c` | not summarized | `+2.9733` |
+| `selected_b_scale` | n/a | `0.9167` |
+| `selected_c_scale` | n/a | `0.2500` |
+
+Per-seed route choices:
+
+| Seed | `selected_b_scale` | B route | `selected_c_scale` | C route |
+| ---: | ---: | --- | ---: | --- |
+| `0` | `1.0` | `shared` | `0.25` | `private` |
+| `1` | `0.75` | `shared` | `0.25` | `private` |
+| `2` | `1.0` | `shared` | `0.25` | `shared` |
+
+Interpretation:
+
+- This is a positive oracle-routing result. Scalar post-hoc composition found B directions that were safe to share with A and a small C component that learned C while dramatically reducing A/B interference versus blind sequential C.
+- The result supports the core hypothesis that later LoRA updates contain routeable components.
+- This does not yet prove a learned router is available. The route labels are behavioral oracle labels from eval losses.
+- The next check is whether the same pattern holds for `B_rehearsal` and `B_related_strong`, then whether layerwise routing beats scalar routing.
