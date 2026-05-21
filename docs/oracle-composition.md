@@ -37,7 +37,7 @@ conflict_private: old-task loss worsens and new-task loss improves
 reject_or_downweight: new-task loss does not improve
 ```
 
-This is intentionally unfair. Behavioral labels from old tasks are allowed because this is a routing upper bound.
+This is intentionally unfair. Behavioral labels from old tasks are allowed because this is a routing upper bound. Scale selection uses one eval split and final metrics are reported on a held-out eval split when enough eval examples are available. The record field `heldout_report` states whether held-out reporting was used.
 
 Smoke test:
 
@@ -58,6 +58,7 @@ HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 poetry run stt-oracle-compose \
   --max-gossip-vectors 64 \
   --b-scales 0 0.5 1.0 \
   --c-scales 0 0.5 1.0 \
+  --fixed-compositions 0.9:0.25 \
   --seeds 0 \
   --task-a-file data/accretion_task_a.txt \
   --task-b-file data/accretion_task_b_related.txt \
@@ -85,6 +86,7 @@ HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 poetry run stt-oracle-compose \
   --max-gossip-vectors 256 \
   --b-scales 0 0.25 0.5 0.75 1.0 \
   --c-scales 0 0.25 0.5 0.75 1.0 \
+  --fixed-compositions 0.9:0.25 1.0:0.25 \
   --seeds 0 1 2 \
   --task-a-file data/accretion_task_a.txt \
   --task-b-file data/accretion_task_b_related.txt \
@@ -101,6 +103,19 @@ Primary readout:
 - `oracle_learning_c`: C learning retained by the routed composition.
 - `oracle_interference_a`: A damage from selected C relative to selected B-only composition.
 - `oracle_interference_b`: B damage from selected C relative to selected B-only composition.
+- `sequential_learning_c`: blind sequential C learning, used to verify routing did not preserve A/B by refusing C.
+- `fixed_*`: metrics for dumb fixed composers such as `A + 0.9B + 0.25C`.
+
+Summary win counts report whether oracle and fixed composition beat blind sequential per seed:
+
+- `oracle_accretion_win_count`
+- `oracle_interference_a_win_count`
+- `oracle_interference_b_win_count`
+- `oracle_learning_c_preserved_count`
+- `fixed_accretion_win_count`
+- `fixed_interference_a_win_count`
+- `fixed_interference_b_win_count`
+- `fixed_learning_c_preserved_count`
 
 Interpretation rules:
 
@@ -108,6 +123,7 @@ Interpretation rules:
 - If C candidates usually route as `conflict_private` or select `c_scale=0`, C updates contain damaging directions that should be isolated.
 - If oracle routing cannot beat blind sequential A/B/C, learned routing is premature.
 - If scalar routing works, the next experiment is layerwise or modulewise routing.
+- If `A + 0.9B + 0.25C` gets most of the oracle benefit, a simple global composition rule may be enough for this regime. If per-seed oracle selection beats fixed scaling, that supports real routing.
 
 ## First Qwen Result
 
@@ -151,5 +167,5 @@ Interpretation:
 
 - This is a positive oracle-routing result. Scalar post-hoc composition found B directions that were safe to share with A and a small C component that learned C while dramatically reducing A/B interference versus blind sequential C.
 - The result supports the core hypothesis that later LoRA updates contain routeable components.
-- This does not yet prove a learned router is available. The route labels are behavioral oracle labels from eval losses.
+- This does not yet prove a learned router is available. The route labels are behavioral oracle labels from eval losses. This first run predated held-out reporting and fixed composer baselines; newer runs should use the upgraded metrics above.
 - The next check is whether the same pattern holds for `B_rehearsal` and `B_related_strong`, then whether layerwise routing beats scalar routing.

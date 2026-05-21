@@ -6,9 +6,11 @@ from stt.oracle_compose import (
     CompositionResult,
     classify_route,
     compose_state,
+    parse_fixed_compositions,
     select_b_candidate,
     select_c_candidate,
     snapshot_trainable_state,
+    split_eval_encoded,
     subtract_state,
 )
 
@@ -38,6 +40,23 @@ def test_classify_route_uses_old_and_new_deltas() -> None:
     assert classify_route(0.0, 0.2, eps_old=0.1, eps_new=0.1) == "private"
     assert classify_route(-0.2, 0.2, eps_old=0.1, eps_new=0.1) == "conflict_private"
     assert classify_route(0.2, 0.0, eps_old=0.1, eps_new=0.1) == "reject_or_downweight"
+
+
+def test_split_eval_encoded_creates_heldout_halves() -> None:
+    encoded = {
+        "input_ids": torch.arange(6).reshape(6, 1),
+        "attention_mask": torch.ones(6, 1),
+    }
+
+    select, report, heldout = split_eval_encoded(encoded, batch_size=2)
+
+    assert heldout
+    assert select["input_ids"].shape[0] == 3
+    assert report["input_ids"].shape[0] == 3
+
+
+def test_parse_fixed_compositions_reads_scale_pairs() -> None:
+    assert parse_fixed_compositions(["0.9:0.25", "1:0"]) == [(0.9, 0.25), (1.0, 0.0)]
 
 
 def test_oracle_selectors_prefer_safe_learning() -> None:
