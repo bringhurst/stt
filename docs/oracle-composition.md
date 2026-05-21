@@ -168,7 +168,7 @@ Interpretation:
 - This is a positive oracle-routing result. Scalar post-hoc composition found B directions that were safe to share with A and a small C component that learned C while dramatically reducing A/B interference versus blind sequential C.
 - The result supports the core hypothesis that later LoRA updates contain routeable components.
 - This does not yet prove a learned router is available. The route labels are behavioral oracle labels from eval losses. This first run predated held-out reporting and fixed composer baselines; newer runs should use the upgraded metrics above.
-- The next check is whether the same pattern holds for `B_rehearsal` and `B_related_strong`, then whether layerwise routing beats scalar routing.
+- The next check is whether layerwise routing beats scalar routing and whether fixed global composition remains stable beyond the current task ladder.
 
 ## Held-Out Reporting Rerun
 
@@ -213,3 +213,70 @@ Interpretation:
 - The reviewer objection that routing preserves A/B by refusing C does not hold here. Both fixed and oracle composition improve C learning versus blind sequential on held-out reporting.
 - The dumb fixed composer captures most of the oracle gain. That is good news for architecture simplicity: in this regime, a global rule close to `A + 0.9B + 0.25C` may be enough.
 - Oracle routing still has slightly higher mean accretion, but fixed composition has slightly lower A/B interference and stronger C learning. This argues for comparing fixed global rules before investing in a learned router.
+
+## Held-Out Ladder Replication
+
+The same held-out protocol was repeated on the stronger related task and the rehearsal positive control.
+
+Runs:
+
+```text
+B_related_strong: runs/20260521T055856973515Z/results.json
+B_rehearsal: runs/20260521T061141201409Z/results.json
+```
+
+Shared condition:
+
+```text
+gossip_weight=12.5
+seeds=0 1 2
+heldout_report=true
+fixed_compositions=0.9:0.25,1.0:0.25
+```
+
+`B_related_strong` summary:
+
+| Metric | Blind Sequential | Fixed `0.9B+0.25C` | Oracle Routed |
+| --- | ---: | ---: | ---: |
+| `accretion_a` | `+0.0006` | `+0.0973` | `+0.1062` |
+| `interference_a_after_c` | `+0.2186` | `-0.0430` | `-0.0228` |
+| `interference_b_after_c` | `+0.3069` | `+0.0030` | `+0.0204` |
+| `learning_b` | `+2.6200` | `+2.6101` | `+2.5718` |
+| `learning_c` | `+1.6472` | `+3.0830` | `+2.7071` |
+| `eval_c` | `0.1569` | `0.4713` | `0.8472` |
+| `selected_b_scale` | n/a | `0.9000` | `0.8333` |
+| `selected_c_scale` | n/a | `0.2500` | `0.2500` |
+
+`B_related_strong` win counts over seeds `0 1 2`:
+
+| Method | Accretion wins | A-interference wins | B-interference wins | C-learning preserved |
+| --- | ---: | ---: | ---: | ---: |
+| Fixed `0.9B+0.25C` | `3/3` | `3/3` | `3/3` | `3/3` |
+| Oracle routed | `3/3` | `3/3` | `3/3` | `3/3` |
+
+`B_rehearsal` summary:
+
+| Metric | Blind Sequential | Fixed `0.9B+0.25C` | Oracle Routed |
+| --- | ---: | ---: | ---: |
+| `accretion_a` | `+0.1926` | `+0.1887` | `+0.1936` |
+| `interference_a_after_c` | `+0.4344` | `+0.0015` | `-0.0010` |
+| `interference_b_after_c` | `+0.5814` | `+0.0053` | `+0.0004` |
+| `learning_b` | `+3.4683` | `+3.4517` | `+3.4679` |
+| `learning_c` | `+2.1112` | `+2.7069` | `+1.7143` |
+| `eval_c` | `0.1697` | `0.8474` | `1.8400` |
+| `selected_b_scale` | n/a | `0.9000` | `1.0000` |
+| `selected_c_scale` | n/a | `0.2500` | `0.0833` |
+
+`B_rehearsal` win counts over seeds `0 1 2`:
+
+| Method | Accretion wins | A-interference wins | B-interference wins | C-learning preserved |
+| --- | ---: | ---: | ---: | ---: |
+| Fixed `0.9B+0.25C` | `2/3` | `3/3` | `3/3` | `3/3` |
+| Oracle routed | `3/3` | `3/3` | `3/3` | `1/3` |
+
+Interpretation:
+
+- `B_related_strong` reproduces the `B_related` result: scalar fixed composition and oracle routing both reduce A/B interference while improving held-out C learning versus blind sequential.
+- `B_rehearsal` is different. Because B already rehearses A strongly, blind sequential keeps high A accretion and B learning, but C still damages A/B heavily. Both fixed and oracle composition remove most C interference.
+- The fixed `0.9B+0.25C` rule is stronger than the scalar oracle on `B_rehearsal` for C learning because the oracle selection rule rejects C on two seeds. This is evidence that the current oracle objective is too conservative for positive-control rehearsal regimes.
+- Across the held-out ladder so far, the simple fixed composer is a serious baseline, not a throwaway comparator. A learned router should beat `A + 0.9B + 0.25C`, not just blind sequential.
