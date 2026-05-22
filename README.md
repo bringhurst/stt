@@ -221,7 +221,9 @@ the predeclared `A + 0.9B + 0.25C` composition against blind sequential training
 
 Current Qwen accretion status: `B_related` is near-neutral and shows gossip preserving A better than baseline, while `B_rehearsal` is the positive-control condition and produces positive baseline accretion. In the 6-seed rehearsal run, baseline `accretion_a_after_b=+0.1514`, gossip `+0.1576`, and repulsion `+0.1437`.
 
-Current routed-update status: fixed `A + 0.9B + 0.25C` passes the 6-seed Qwen gauntlet on `B_related` and `B_related_strong` with `6/6` wins for accretion, A/B interference, and C-learning preservation. On `B_rehearsal`, it preserves C learning and reduces A/B interference on `6/6` seeds while trading off a small amount of already-strong A accretion. See `docs/routed-accretion.md` for run paths and metrics.
+Current routed-update status: fixed `A + 0.9B + 0.25C` is a strong A/B retention baseline, not a Pareto win. With corrected phase-local C-learning, it wins A/B interference on `6/6` seeds across `B_related`, `B_related_strong`, and `B_rehearsal`; it wins accretion on `6/6`, `6/6`, and `2/6` respectively; C-learning preservation is `0/6` in all three conditions because the published adapter only applies `0.25C`. See `docs/routed-accretion.md` for run paths and metrics.
+
+The corrected local route sweep over `B=0.85..1.00` and `C=0.20..0.30` moves best frontier routes to `C=0.30` for all three conditions, but still has `0/6` C-learning preservation. The next route calibration should test larger C scales.
 
 `forgetting_a` is still emitted as a compatibility alias for `backward_transfer_a`.
 

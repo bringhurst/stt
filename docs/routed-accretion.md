@@ -67,14 +67,22 @@ Interpretation:
 - If it fails on specific regimes, use the failure to decide whether layerwise routing, adaptive C scale selection, or a less conservative route objective is warranted.
 - For scale sweeps, choose the fixed pair by `frontier_score`, not accretion alone. This prevents choosing a route that improves A while silently giving up C learning or B retention.
 
-## First Qwen Ladder
+## Corrected Six-Seed Qwen Ladder
+
+The routed C-learning metric is phase-local:
+
+```text
+routed_learning_c = eval_c_after_b - routed_eval_c
+```
+
+Earlier routed runs used `eval_c_before - routed_eval_c` and overstated C learning. Treat the earlier stored C-learning, frontier-score, and C-preservation claims as stale unless the metrics are recomputed from the raw eval fields.
 
 Runs:
 
 ```text
-B_related: runs/20260521T144308396837Z/results.json
-B_related_strong: runs/20260521T144942693397Z/results.json
-B_rehearsal: runs/20260521T145625954856Z/results.json
+B_related: runs/20260522T030324434757Z/results.json
+B_related_strong: runs/20260522T031752104235Z/results.json
+B_rehearsal: runs/20260522T033529504809Z/results.json
 ```
 
 Shared condition:
@@ -84,47 +92,49 @@ Qwen/Qwen2.5-0.5B
 gossip_weight=12.5
 route_b_scale=0.9
 route_c_scale=0.25
-seeds=0 1 2
+eval_batches=16
+seeds=0 1 2 3 4 5
 ```
 
 Summary:
 
 | Condition | Method | `accretion_a` | `interference_a` | `interference_b` | `learning_b` | `learning_c` | `eval_c` |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `B_related` | Sequential | `+0.0071` | `+0.1267` | `+0.4364` | `+1.9102` | `+1.6740` | `0.1679` |
-| `B_related` | Routed | `+0.1207` | `-0.1135` | `+0.0201` | `+1.8901` | `+3.0337` | `0.4865` |
-| `B_related_strong` | Sequential | `+0.0076` | `+0.2370` | `+0.3477` | `+1.6814` | `+1.6244` | `0.1637` |
-| `B_related_strong` | Routed | `+0.1101` | `-0.1025` | `+0.0121` | `+1.6694` | `+3.0534` | `0.4668` |
-| `B_rehearsal` | Sequential | `+0.1892` | `+0.4191` | `+0.5163` | `+1.9242` | `+2.1740` | `0.1658` |
-| `B_rehearsal` | Routed | `+0.1831` | `+0.0061` | `+0.0157` | `+1.9085` | `+2.7097` | `0.8105` |
+| `B_related` | Sequential | `-0.0246` | `+0.0771` | `+0.3975` | `+1.9221` | `+1.5906` | `0.1707` |
+| `B_related` | Routed | `+0.1009` | `-0.1255` | `+0.0126` | `+1.9095` | `+1.2850` | `0.4764` |
+| `B_related_strong` | Sequential | `-0.0285` | `+0.1423` | `+0.2928` | `+1.6782` | `+1.5572` | `0.1742` |
+| `B_related_strong` | Routed | `+0.0926` | `-0.1210` | `+0.0115` | `+1.6667` | `+1.2681` | `0.4633` |
+| `B_rehearsal` | Sequential | `+0.1778` | `+0.3728` | `+0.5096` | `+1.8758` | `+2.1052` | `0.1750` |
+| `B_rehearsal` | Routed | `+0.1726` | `+0.0052` | `+0.0160` | `+1.8598` | `+1.4634` | `0.8168` |
 
 Win counts:
 
 | Condition | Accretion wins | A-interference wins | B-interference wins | C-learning preserved |
 | --- | ---: | ---: | ---: | ---: |
-| `B_related` | `3/3` | `3/3` | `3/3` | `3/3` |
-| `B_related_strong` | `3/3` | `3/3` | `3/3` | `3/3` |
-| `B_rehearsal` | `0/3` | `3/3` | `3/3` | `3/3` |
+| `B_related` | `6/6` | `6/6` | `6/6` | `0/6` |
+| `B_related_strong` | `6/6` | `6/6` | `6/6` | `0/6` |
+| `B_rehearsal` | `2/6` | `6/6` | `6/6` | `0/6` |
 
 Interpretation:
 
-- The fixed route is a strong deployed baseline. It preserves A/B far better than blind sequential while keeping C learning above the blind sequential C-learning increment on all nine seeds.
-- The related conditions are clean wins: routed composition improves accretion and sharply reduces C interference.
-- The rehearsal condition trades a small amount of already-strong A accretion for a large reduction in C interference and better C-learning preservation. This is acceptable for interference control but suggests rehearsal may prefer a slightly larger B scale or adaptive B scaling.
-- Learned or layerwise routing should now be required to beat this fixed route, not just blind sequential.
+- The fixed route is a strong A/B retention baseline, not a Pareto win. It sharply reduces C-phase A/B interference across the ladder.
+- The related conditions are clean A-retention wins: routed composition converts negative mean A accretion under blind sequential into positive routed accretion and wins accretion on every seed.
+- The route under-learns C relative to blind sequential in every corrected seed because the published adapter only applies `0.25C`. This is visible in both lower `learning_c` and higher `eval_c`.
+- The rehearsal condition shows the tradeoff most clearly: blind sequential already has high A accretion from rehearsal, so the fixed route gives up a small mean amount of accretion while massively reducing A/B interference.
+- Learned, layerwise, or adaptive routing must beat this fixed A/B retention route while recovering more C learning.
 
 Reproduce the summary:
 
 ```bash
 poetry run stt-analyze \
-  runs/20260521T144308396837Z/results.json \
-  runs/20260521T144942693397Z/results.json \
-  runs/20260521T145625954856Z/results.json
+  runs/20260522T030324434757Z/results.json \
+  runs/20260522T031752104235Z/results.json \
+  runs/20260522T033529504809Z/results.json
 ```
 
 ## Frontier Sweep Check
 
-Before the 6-seed gauntlet, a small rehearsal-only route sweep checked whether selecting by a balanced frontier score differs from selecting by accretion alone.
+Before the C-learning metric correction, a small rehearsal-only route sweep checked whether selecting by a balanced frontier score differs from selecting by accretion alone. The stored C-learning and frontier-score fields in this run are stale because they used `eval_c_before - routed_eval_c`. Recompute or rerun before using it to choose route scales.
 
 Run:
 
@@ -138,78 +148,57 @@ Route pairs:
 0.9:0.15 0.9:0.25 0.9:0.35 1.0:0.15 1.0:0.25 1.0:0.35
 ```
 
-Summary:
+Current interpretation:
 
-| Route | `accretion_a` | `interference_a` | `interference_b` | `learning_b` | `learning_c` | `frontier_score` | Wins |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
-| `0.9B+0.15C` | `+0.1925` | `-0.0033` | `+0.0069` | `+1.9172` | `+2.2431` | `+1.0023` | accretion `3/3`, C preserved `2/3` |
-| `0.9B+0.25C` | `+0.1831` | `+0.0061` | `+0.0157` | `+1.9085` | `+2.7097` | `+1.4394` | C preserved `3/3` |
-| `0.9B+0.35C` | `+0.1573` | `+0.0319` | `+0.0446` | `+1.8796` | `+2.9883` | `+1.6302` | C preserved `3/3` |
-| `1.0B+0.15C` | `+0.1904` | `-0.0011` | `-0.0010` | `+1.9251` | `+2.2612` | `+1.0261` | accretion `2/3`, C preserved `2/3` |
-| `1.0B+0.25C` | `+0.1800` | `+0.0092` | `+0.0100` | `+1.9142` | `+2.7271` | `+1.4576` | C preserved `3/3` |
-| `1.0B+0.35C` | `+0.1550` | `+0.0342` | `+0.0360` | `+1.8881` | `+3.0060` | `+1.6540` | C preserved `3/3` |
+- Accretion-only selection still risks choosing very small C scales that protect A while under-learning C.
+- `frontier_score` remains the right selection rule because it penalizes C-learning loss, but all pre-correction frontier numbers should be discarded.
+- The next local calibration should rerun the route grid with the corrected phase-local `routed_learning_c` definition.
 
-Interpretation:
-
-- Accretion-only selection would prefer smaller C scales such as `0.9B+0.15C`, but that under-preserves C learning on one seed.
-- Frontier scoring prefers `1.0B+0.35C` in this rehearsal-only sweep because it values C learning and interference reduction, not just A accretion.
-- This supports using `frontier_score` for later local calibration, while keeping the immediate gauntlet predeclared at `0.9B+0.25C`.
-
-## Six-Seed Fixed-Route Gauntlet
-
-Predeclared route:
-
-```text
-A + 0.9B + 0.25C
-```
+## Corrected Local Route Sweep
 
 Runs:
 
 ```text
-B_related: runs/20260521T230138841306Z/results.json
-B_related_strong: runs/20260521T234032906888Z/results.json
-B_rehearsal: runs/20260522T000208301357Z/results.json
+B_related: runs/20260522T040104524297Z/results.json
+B_related_strong: runs/20260522T042339078093Z/results.json
+B_rehearsal: runs/20260522T044601500876Z/results.json
 ```
 
-Shared condition:
+Route grid:
 
 ```text
-Qwen/Qwen2.5-0.5B
-gossip_weight=12.5
-eval_batches=16
-seeds=0 1 2 3 4 5
+B scales: 0.85 0.90 0.95 1.00
+C scales: 0.20 0.25 0.30
 ```
 
-Summary:
+Best corrected frontier routes:
 
-| Condition | Method | `accretion_a` | `interference_a` | `interference_b` | `learning_b` | `learning_c` | `eval_c` | `frontier_score` |
-| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `B_related` | Sequential | `-0.0246` | `+0.0771` | `+0.3976` | `+1.9221` | `+1.5906` | `0.1707` | n/a |
-| `B_related` | Routed | `+0.1009` | `-0.1255` | `+0.0126` | `+1.9095` | `+3.0704` | `0.4764` | `+2.1898` |
-| `B_related_strong` | Sequential | `-0.0285` | `+0.1423` | `+0.2928` | `+1.6782` | `+1.5572` | `0.1742` | n/a |
-| `B_related_strong` | Routed | `+0.0926` | `-0.1210` | `+0.0115` | `+1.6667` | `+3.0834` | `0.4633` | `+2.1890` |
-| `B_rehearsal` | Sequential | `+0.1778` | `+0.3728` | `+0.5095` | `+1.8758` | `+2.1052` | `0.1751` | n/a |
-| `B_rehearsal` | Routed | `+0.1726` | `+0.0052` | `+0.0160` | `+1.8598` | `+2.7299` | `0.8168` | `+1.4767` |
+| Condition | Best route | `accretion_a` | `interference_a` | `interference_b` | `learning_b` | `learning_c` | `eval_c` | `frontier_score` | C preserved |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `B_related` | `0.90B+0.30C` | `+0.1061` | `-0.1307` | `+0.0191` | `+1.9030` | `+1.3788` | `0.3825` | `+0.5004` | `0/6` |
+| `B_related_strong` | `0.85B+0.30C` | `+0.1105` | `-0.1390` | `+0.0275` | `+1.6508` | `+1.3469` | `0.3845` | `+0.4685` | `0/6` |
+| `B_rehearsal` | `1.00B+0.30C` | `+0.1626` | `+0.0152` | `+0.0163` | `+1.8595` | `+1.6453` | `0.6350` | `+0.3716` | `0/6` |
 
-Win counts:
+Sequential references:
 
-| Condition | Accretion wins | A-interference wins | B-interference wins | C-learning preserved |
-| --- | ---: | ---: | ---: | ---: |
-| `B_related` | `6/6` | `6/6` | `6/6` | `6/6` |
-| `B_related_strong` | `6/6` | `6/6` | `6/6` | `6/6` |
-| `B_rehearsal` | `2/6` | `6/6` | `6/6` | `6/6` |
+| Condition | `accretion_a` | `interference_a` | `interference_b` | `learning_b` | `learning_c` | `eval_c` |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `B_related` | `-0.0246` | `+0.0771` | `+0.3976` | `+1.9221` | `+1.5906` | `0.1707` |
+| `B_related_strong` | `-0.0285` | `+0.1423` | `+0.2928` | `+1.6782` | `+1.5572` | `0.1742` |
+| `B_rehearsal` | `+0.1778` | `+0.3728` | `+0.5096` | `+1.8758` | `+2.1052` | `0.1751` |
 
 Interpretation:
 
-- The predeclared route passes the strongest current gauntlet for related and strongly related B tasks: it converts negative mean A accretion under blind sequential into positive routed accretion while reducing C-phase A/B interference and preserving C learning on every seed.
-- The rehearsal positive control shows the expected tradeoff. Blind sequential already has high A accretion from rehearsal; routed composition gives up a small amount of that accretion but still preserves most of it while massively reducing C interference and improving C learning.
-- This supports the limited claim that sequential LoRA updates contain separable compatible and interfering components, and that a simple fixed high-B/low-C composition rule can implement a compact toy continual-learning mechanism.
+- Corrected frontier selection consistently pushes to the largest tested C scale, `0.30`, because the earlier fixed `0.25C` route under-learns C.
+- The local grid still does not preserve C learning on any seed. Increasing C from `0.25` to `0.30` improves `learning_c` and `eval_c`, but not enough to match blind sequential C learning.
+- Lower B scales help the related tasks keep A accretion while allowing slightly more C. The rehearsal condition prefers `1.00B+0.30C` because B already rehearses A facts.
+- The next calibration should test larger C scales, for example `0.35..0.60`, and should keep `frontier_score` as the primary selector.
 
-Reproduce the gauntlet summary:
+Reproduce the corrected sweep summary:
 
 ```bash
 poetry run stt-analyze \
-  runs/20260521T230138841306Z/results.json \
-  runs/20260521T234032906888Z/results.json \
-  runs/20260522T000208301357Z/results.json
+  runs/20260522T040104524297Z/results.json \
+  runs/20260522T042339078093Z/results.json \
+  runs/20260522T044601500876Z/results.json
 ```

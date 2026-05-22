@@ -227,7 +227,7 @@ def run_routed_accretion_variants(
         routed_interference_a = routed_eval_a - eval_a_after_b
         routed_interference_b = routed_eval_b - eval_b_after_b
         routed_learning_b = eval_b_after_a - routed_eval_b
-        routed_learning_c = eval_c_before - routed_eval_c
+        routed_learning_c = eval_c_after_b - routed_eval_c
         results.append(
             {
                 "variant": route_variant_name(
