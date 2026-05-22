@@ -91,6 +91,7 @@ class RoutedAccretionResult(TypedDict):
     routed_learning_c: float
     routed_retention_a: float
     routed_retention_b: float
+    frontier_score: float
     lora_cosine_a_b_mean: float | None
     lora_cosine_a_c_mean: float | None
     lora_cosine_b_c_mean: float | None
@@ -122,6 +123,33 @@ def run_routed_accretion_variant(
     compat_batches: int = 0,
 ) -> RoutedAccretionResult:
     """Train A/B/C and evaluate a predeclared routed final adapter state."""
+    return run_routed_accretion_variants(
+        variant,
+        settings=settings,
+        task_a_texts=task_a_texts,
+        task_b_texts=task_b_texts,
+        task_c_texts=task_c_texts,
+        phase_steps=phase_steps,
+        seed=seed,
+        device=device,
+        route_pairs=[(route_b_scale, route_c_scale)],
+        compat_batches=compat_batches,
+    )[0]
+
+
+def run_routed_accretion_variants(
+    variant: Variant,
+    settings: LoraSettings,
+    task_a_texts: list[str],
+    task_b_texts: list[str],
+    task_c_texts: list[str],
+    phase_steps: int,
+    seed: int,
+    device: str,
+    route_pairs: list[tuple[float, float]],
+    compat_batches: int = 0,
+) -> list[RoutedAccretionResult]:
+    """Train A/B/C once and evaluate one or more fixed routed final states."""
     resolved_device = resolve_device(device)
     torch.manual_seed(seed)
     tokenizer = load_tokenizer(settings.model_name)
@@ -172,71 +200,141 @@ def run_routed_accretion_variant(
 
     delta_b_state = subtract_state(state_b, state_a)
     delta_c_state = subtract_state(state_c, state_b)
-    routed_state = compose_state(
-        state_a,
-        [(route_b_scale, delta_b_state), (route_c_scale, delta_c_state)],
-    )
-    apply_trainable_state(model, routed_state)
-    routed_eval_a = eval_loss(model, eval_a, settings)
-    routed_eval_b = eval_loss(model, eval_b, settings)
-    routed_eval_c = eval_loss(model, eval_c, settings)
-
     lora_delta_a = subtract_lora_deltas(lora_after_a, lora_initial)
     lora_delta_b = subtract_lora_deltas(lora_after_b, lora_after_a)
     lora_delta_c = subtract_lora_deltas(lora_after_c, lora_after_b)
+    lora_cosine_a_b_mean = mean_lora_cosine(lora_delta_a, lora_delta_b)
+    lora_cosine_a_c_mean = mean_lora_cosine(lora_delta_a, lora_delta_c)
+    lora_cosine_b_c_mean = mean_lora_cosine(lora_delta_b, lora_delta_c)
 
-    return {
-        "variant": variant.name,
-        "model": settings.model_name,
-        "device": resolved_device,
-        "seed": seed,
-        "diversity_weight": variant.diversity,
-        "repulsion_weight": variant.repulsion,
-        "sparse_weight": variant.sparse,
-        "gossip_weight": variant.gossip,
-        "gossip_tau": variant.gossip_tau,
-        "gossip_k": variant.gossip_k,
-        "max_gossip_vectors": variant.max_gossip_vectors,
-        "route_b_scale": route_b_scale,
-        "route_c_scale": route_c_scale,
-        "trainable_parameters": trainable,
-        "total_parameters": total,
-        "trainable_fraction": trainable / total,
-        "eval_a_before": eval_a_before,
-        "eval_b_before": eval_b_before,
-        "eval_c_before": eval_c_before,
-        "eval_a_after_a": eval_a_after_a,
-        "eval_b_after_a": eval_b_after_a,
-        "eval_c_after_a": eval_c_after_a,
-        "eval_a_after_b": eval_a_after_b,
-        "eval_b_after_b": eval_b_after_b,
-        "eval_c_after_b": eval_c_after_b,
-        "sequential_eval_a": sequential_eval_a,
-        "sequential_eval_b": sequential_eval_b,
-        "sequential_eval_c": sequential_eval_c,
-        "routed_eval_a": routed_eval_a,
-        "routed_eval_b": routed_eval_b,
-        "routed_eval_c": routed_eval_c,
-        "sequential_accretion_a": eval_a_after_a - eval_a_after_b,
-        "sequential_interference_a": sequential_eval_a - eval_a_after_b,
-        "sequential_interference_b": sequential_eval_b - eval_b_after_b,
-        "sequential_learning_b": eval_b_after_a - eval_b_after_b,
-        "sequential_learning_c": eval_c_after_b - sequential_eval_c,
-        "sequential_retention_a": ratio(eval_a_after_a, sequential_eval_a),
-        "sequential_retention_b": ratio(eval_b_after_b, sequential_eval_b),
-        "routed_accretion_a": eval_a_after_a - routed_eval_a,
-        "routed_interference_a": routed_eval_a - eval_a_after_b,
-        "routed_interference_b": routed_eval_b - eval_b_after_b,
-        "routed_learning_b": eval_b_after_a - routed_eval_b,
-        "routed_learning_c": eval_c_before - routed_eval_c,
-        "routed_retention_a": ratio(eval_a_after_a, routed_eval_a),
-        "routed_retention_b": ratio(eval_b_after_b, routed_eval_b),
-        "lora_cosine_a_b_mean": mean_lora_cosine(lora_delta_a, lora_delta_b),
-        "lora_cosine_a_c_mean": mean_lora_cosine(lora_delta_a, lora_delta_c),
-        "lora_cosine_b_c_mean": mean_lora_cosine(lora_delta_b, lora_delta_c),
-        "grad_cosine_a_b_after_a": grad_cosine_a_b_after_a,
-        "grad_cosine_a_c_after_b": grad_cosine_a_c_after_b,
-    }
+    results = []
+    multi_route = len(route_pairs) > 1
+    for route_b_scale, route_c_scale in route_pairs:
+        routed_state = compose_state(
+            state_a,
+            [(route_b_scale, delta_b_state), (route_c_scale, delta_c_state)],
+        )
+        apply_trainable_state(model, routed_state)
+        routed_eval_a = eval_loss(model, eval_a, settings)
+        routed_eval_b = eval_loss(model, eval_b, settings)
+        routed_eval_c = eval_loss(model, eval_c, settings)
+        sequential_accretion_a = eval_a_after_a - eval_a_after_b
+        sequential_interference_a = sequential_eval_a - eval_a_after_b
+        sequential_interference_b = sequential_eval_b - eval_b_after_b
+        sequential_learning_b = eval_b_after_a - eval_b_after_b
+        sequential_learning_c = eval_c_after_b - sequential_eval_c
+        routed_accretion_a = eval_a_after_a - routed_eval_a
+        routed_interference_a = routed_eval_a - eval_a_after_b
+        routed_interference_b = routed_eval_b - eval_b_after_b
+        routed_learning_b = eval_b_after_a - routed_eval_b
+        routed_learning_c = eval_c_before - routed_eval_c
+        results.append(
+            {
+                "variant": route_variant_name(
+                    variant.name,
+                    route_b_scale,
+                    route_c_scale,
+                    multi_route,
+                ),
+                "model": settings.model_name,
+                "device": resolved_device,
+                "seed": seed,
+                "diversity_weight": variant.diversity,
+                "repulsion_weight": variant.repulsion,
+                "sparse_weight": variant.sparse,
+                "gossip_weight": variant.gossip,
+                "gossip_tau": variant.gossip_tau,
+                "gossip_k": variant.gossip_k,
+                "max_gossip_vectors": variant.max_gossip_vectors,
+                "route_b_scale": route_b_scale,
+                "route_c_scale": route_c_scale,
+                "trainable_parameters": trainable,
+                "total_parameters": total,
+                "trainable_fraction": trainable / total,
+                "eval_a_before": eval_a_before,
+                "eval_b_before": eval_b_before,
+                "eval_c_before": eval_c_before,
+                "eval_a_after_a": eval_a_after_a,
+                "eval_b_after_a": eval_b_after_a,
+                "eval_c_after_a": eval_c_after_a,
+                "eval_a_after_b": eval_a_after_b,
+                "eval_b_after_b": eval_b_after_b,
+                "eval_c_after_b": eval_c_after_b,
+                "sequential_eval_a": sequential_eval_a,
+                "sequential_eval_b": sequential_eval_b,
+                "sequential_eval_c": sequential_eval_c,
+                "routed_eval_a": routed_eval_a,
+                "routed_eval_b": routed_eval_b,
+                "routed_eval_c": routed_eval_c,
+                "sequential_accretion_a": sequential_accretion_a,
+                "sequential_interference_a": sequential_interference_a,
+                "sequential_interference_b": sequential_interference_b,
+                "sequential_learning_b": sequential_learning_b,
+                "sequential_learning_c": sequential_learning_c,
+                "sequential_retention_a": ratio(eval_a_after_a, sequential_eval_a),
+                "sequential_retention_b": ratio(eval_b_after_b, sequential_eval_b),
+                "routed_accretion_a": routed_accretion_a,
+                "routed_interference_a": routed_interference_a,
+                "routed_interference_b": routed_interference_b,
+                "routed_learning_b": routed_learning_b,
+                "routed_learning_c": routed_learning_c,
+                "routed_retention_a": ratio(eval_a_after_a, routed_eval_a),
+                "routed_retention_b": ratio(eval_b_after_b, routed_eval_b),
+                "frontier_score": frontier_score(
+                    sequential_accretion_a=sequential_accretion_a,
+                    sequential_interference_a=sequential_interference_a,
+                    sequential_interference_b=sequential_interference_b,
+                    sequential_learning_b=sequential_learning_b,
+                    sequential_learning_c=sequential_learning_c,
+                    routed_accretion_a=routed_accretion_a,
+                    routed_interference_a=routed_interference_a,
+                    routed_interference_b=routed_interference_b,
+                    routed_learning_b=routed_learning_b,
+                    routed_learning_c=routed_learning_c,
+                ),
+                "lora_cosine_a_b_mean": lora_cosine_a_b_mean,
+                "lora_cosine_a_c_mean": lora_cosine_a_c_mean,
+                "lora_cosine_b_c_mean": lora_cosine_b_c_mean,
+                "grad_cosine_a_b_after_a": grad_cosine_a_b_after_a,
+                "grad_cosine_a_c_after_b": grad_cosine_a_c_after_b,
+            }
+        )
+    return results
+
+
+def route_variant_name(
+    variant_name: str,
+    route_b_scale: float,
+    route_c_scale: float,
+    multi_route: bool,
+) -> str:
+    """Return a stable variant label for single routes and route sweeps."""
+    if not multi_route:
+        return variant_name
+    return f"{variant_name}_b{route_b_scale:g}_c{route_c_scale:g}"
+
+
+def frontier_score(
+    *,
+    sequential_accretion_a: float,
+    sequential_interference_a: float,
+    sequential_interference_b: float,
+    sequential_learning_b: float,
+    sequential_learning_c: float,
+    routed_accretion_a: float,
+    routed_interference_a: float,
+    routed_interference_b: float,
+    routed_learning_b: float,
+    routed_learning_c: float,
+) -> float:
+    """Score a route by balanced improvement over blind sequential."""
+    return (
+        (routed_accretion_a - sequential_accretion_a)
+        + (sequential_interference_a - routed_interference_a)
+        + (sequential_interference_b - routed_interference_b)
+        + (routed_learning_c - sequential_learning_c)
+        + (0.25 * (routed_learning_b - sequential_learning_b))
+    )
 
 
 def summarize_routed_accretion(
@@ -266,6 +364,7 @@ def summarize_routed_accretion(
         "routed_learning_c",
         "routed_retention_a",
         "routed_retention_b",
+        "frontier_score",
         "lora_cosine_a_b_mean",
         "lora_cosine_a_c_mean",
         "lora_cosine_b_c_mean",
@@ -310,6 +409,15 @@ def summarize_routed_accretion(
     return summary
 
 
+def parse_route_pairs(values: list[str]) -> list[tuple[float, float]]:
+    """Parse route pair specs like `0.9:0.25`."""
+    route_pairs = []
+    for value in values:
+        b_scale, c_scale = value.split(":", maxsplit=1)
+        route_pairs.append((float(b_scale), float(c_scale)))
+    return route_pairs
+
+
 def parse_args() -> argparse.Namespace:
     """Parse CLI arguments for `stt-routed-accretion`."""
     parser = argparse.ArgumentParser(description="Run fixed routed-update accretion tests.")
@@ -340,6 +448,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-gossip-vectors", type=int, default=None)
     parser.add_argument("--route-b-scale", type=float, default=0.9)
     parser.add_argument("--route-c-scale", type=float, default=0.25)
+    parser.add_argument(
+        "--route-pairs",
+        nargs="*",
+        default=None,
+        help="Optional routed scale sweep as B:C pairs, e.g. 0.9:0.25 1.0:0.15.",
+    )
     parser.add_argument("--target-modules", nargs="*", default=None)
     parser.add_argument("--output-dir", default=None)
     return parser.parse_args()
@@ -371,11 +485,18 @@ def main() -> None:
         max_gossip_vectors=args.max_gossip_vectors,
     )[0]
     seeds = args.seeds or [args.seed]
+    route_pairs = (
+        parse_route_pairs(args.route_pairs)
+        if args.route_pairs is not None
+        else [(args.route_b_scale, args.route_c_scale)]
+    )
     task_a_texts = load_texts(args.task_a_file)
     task_b_texts = load_texts(args.task_b_file)
     task_c_texts = load_texts(args.task_c_file)
     results = [
-        run_routed_accretion_variant(
+        result
+        for seed in seeds
+        for result in run_routed_accretion_variants(
             variant,
             settings=settings,
             task_a_texts=task_a_texts,
@@ -384,11 +505,9 @@ def main() -> None:
             phase_steps=args.phase_steps,
             seed=seed,
             device=args.device,
-            route_b_scale=args.route_b_scale,
-            route_c_scale=args.route_c_scale,
+            route_pairs=route_pairs,
             compat_batches=args.compat_batches,
         )
-        for seed in seeds
     ]
     record: RoutedAccretionRunRecord = {
         "created_at": datetime.now(UTC).isoformat(),
@@ -417,6 +536,11 @@ def main() -> None:
             "max_gossip_vectors": args.max_gossip_vectors,
             "route_b_scale": args.route_b_scale,
             "route_c_scale": args.route_c_scale,
+            "route_pairs": [f"{b_scale:g}:{c_scale:g}" for b_scale, c_scale in route_pairs],
+            "frontier_score": (
+                "accretion_delta + a_interference_reduction + b_interference_reduction "
+                "+ learning_c_delta + 0.25 * learning_b_delta"
+            ),
         },
         "git_status": git_status(),
         "results": results,

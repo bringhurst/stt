@@ -416,6 +416,9 @@ def test_analyze_routed_record_reports_methods_and_win_counts() -> None:
                 "routed_learning_b_mean": 1.9,
                 "routed_learning_c_mean": 1.5,
                 "routed_eval_c_mean": 0.6,
+                "frontier_score_mean": 1.2,
+                "route_b_scale_mean": 0.9,
+                "route_c_scale_mean": 0.25,
                 "routed_accretion_win_count": 2.0,
                 "routed_interference_a_win_count": 3.0,
                 "routed_interference_b_win_count": 3.0,
@@ -433,6 +436,7 @@ def test_analyze_routed_record_reports_methods_and_win_counts() -> None:
         "routed accretion=2/3 a_interference=3/3 b_interference=3/3 "
         "c_learning_preserved=3/3"
     ) in lines
+    assert "gossip score=+1.2000 b=0.9 c=0.25" in lines
 
 
 def test_aggregate_routed_records_reports_conditions() -> None:
@@ -451,6 +455,9 @@ def test_aggregate_routed_records_reports_conditions() -> None:
             "routed_learning_b_mean": 1.9,
             "routed_learning_c_mean": 1.5,
             "routed_eval_c_mean": 0.6,
+            "frontier_score_mean": 1.2,
+            "route_b_scale_mean": 0.9,
+            "route_c_scale_mean": 0.25,
         }
     }
     first = {
@@ -467,3 +474,4 @@ def test_aggregate_routed_records_reports_conditions() -> None:
     assert lines[0] == "combined_routed_records=2"
     assert any(line.startswith("accretion_task_b_related gossip routed") for line in lines)
     assert any(line.startswith("accretion_task_b_rehearsal gossip sequential") for line in lines)
+    assert any("best_by_frontier" in line for line in lines)

@@ -60,6 +60,8 @@ ORACLE_METRICS = [
     "eval_c",
 ]
 
+ROUTED_METRICS = [*ORACLE_METRICS, "frontier_score"]
+
 ORACLE_METHOD_KEYS = {
     "sequential": {
         "accretion_a": "sequential_accretion_a_after_b",
@@ -103,6 +105,7 @@ ROUTED_METHOD_KEYS = {
         "learning_b": "routed_learning_b",
         "learning_c": "routed_learning_c",
         "eval_c": "routed_eval_c",
+        "frontier_score": "frontier_score",
     },
 }
 
@@ -342,12 +345,16 @@ def analyze_routed_record(record: dict[str, Any]) -> list[str]:
     ]
     for variant_name, values in sorted(summary.items()):
         for method, metric_keys in ROUTED_METHOD_KEYS.items():
-            for metric in ORACLE_METRICS:
-                key = f"{metric_keys[metric]}_mean"
+            for metric in ROUTED_METRICS:
+                metric_key = metric_keys.get(metric)
+                if metric_key is None:
+                    continue
+                key = f"{metric_key}_mean"
                 if key not in values:
                     continue
                 lines.append(f"{variant_name} {method} {metric} {values[key]:+.4f}")
         lines.extend(routed_win_count_lines(variant_name, values))
+    lines.extend(best_routed_frontier_lines(summary))
     return lines
 
 
@@ -368,6 +375,25 @@ def routed_win_count_lines(variant_name: str, values: dict[str, float]) -> list[
     if parts:
         lines.append(f"routed {' '.join(parts)}")
     return lines
+
+
+def best_routed_frontier_lines(summary: dict[str, dict[str, float]]) -> list[str]:
+    """Return the best fixed route by mean frontier score."""
+    candidates = [
+        (variant_name, values)
+        for variant_name, values in summary.items()
+        if "frontier_score_mean" in values
+    ]
+    if not candidates:
+        return []
+    variant_name, values = max(candidates, key=lambda item: item[1]["frontier_score_mean"])
+    return [
+        "",
+        "best_by_frontier",
+        f"{variant_name} score={values['frontier_score_mean']:+.4f} "
+        f"b={values.get('route_b_scale_mean', 0.0):g} "
+        f"c={values.get('route_c_scale_mean', 0.0):g}",
+    ]
 
 
 def analyze_continual_record(
@@ -706,7 +732,7 @@ def aggregate_routed_records(records: list[dict[str, Any]]) -> list[str]:
     lines = [
         f"combined_routed_records={len(records)}",
         "condition variant method accretion_a interference_a interference_b "
-        "learning_b learning_c eval_c",
+        "learning_b learning_c eval_c frontier_score",
     ]
     for record in records:
         condition = record_condition(record)
@@ -714,13 +740,20 @@ def aggregate_routed_records(records: list[dict[str, Any]]) -> list[str]:
         for variant_name, values in sorted(summary.items()):
             for method, metric_keys in ROUTED_METHOD_KEYS.items():
                 formatted = []
-                for metric in ORACLE_METRICS:
-                    key = f"{metric_keys[metric]}_mean"
+                for metric in ROUTED_METRICS:
+                    metric_key = metric_keys.get(metric)
+                    if metric_key is None:
+                        formatted.append(format_optional_float(None))
+                        continue
+                    key = f"{metric_key}_mean"
                     formatted.append(format_optional_float(values.get(key)))
                 lines.append(f"{condition} {variant_name} {method} {' '.join(formatted)}")
             for win_line in routed_win_count_lines(variant_name, values):
                 if win_line:
                     lines.append(f"{condition} {win_line}")
+        for best_line in best_routed_frontier_lines(summary):
+            if best_line:
+                lines.append(f"{condition} {best_line}")
     return lines
 
 

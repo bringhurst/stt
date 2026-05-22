@@ -221,7 +221,7 @@ the predeclared `A + 0.9B + 0.25C` composition against blind sequential training
 
 Current Qwen accretion status: `B_related` is near-neutral and shows gossip preserving A better than baseline, while `B_rehearsal` is the positive-control condition and produces positive baseline accretion. In the 6-seed rehearsal run, baseline `accretion_a_after_b=+0.1514`, gossip `+0.1576`, and repulsion `+0.1437`.
 
-Current routed-update status: fixed `A + 0.9B + 0.25C` wins A/B interference and C-learning preservation across the three-condition Qwen ladder. See `docs/routed-accretion.md` for run paths and metrics.
+Current routed-update status: fixed `A + 0.9B + 0.25C` passes the 6-seed Qwen gauntlet on `B_related` and `B_related_strong` with `6/6` wins for accretion, A/B interference, and C-learning preservation. On `B_rehearsal`, it preserves C learning and reduces A/B interference on `6/6` seeds while trading off a small amount of already-strong A accretion. See `docs/routed-accretion.md` for run paths and metrics.
 
 `forgetting_a` is still emitted as a compatibility alias for `backward_transfer_a`.
 
