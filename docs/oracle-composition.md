@@ -289,3 +289,144 @@ poetry run stt-analyze \
   runs/20260521T055856973515Z/results.json \
   runs/20260521T061141201409Z/results.json
 ```
+
+## Oracle Group-Routing Kill Test
+
+`stt-oracle-route` is the next diagnostic after scalar, grouped, and layer-band fixed routes. It trains one A-to-B-to-C sequence, then greedily chooses C scales per group using A/B/C losses on a selection split. The selected route is evaluated on a held-out split when enough eval batches are available.
+
+This is more unfair than `stt-routed-accretion`: it uses task losses to choose many group-level route coefficients after training. That is intentional. If this oracle cannot recover C learning while preserving A/B, learned routing is unlikely to be worth pursuing in the current setup.
+
+Group modes:
+
+- `layer`: one C scale per transformer layer index.
+- `module`: one C scale per LoRA target module, for example one attention projection in one layer.
+- `tensor`: one C scale per trainable LoRA tensor; this is the strongest and most overfit diagnostic.
+
+Smoke test:
+
+```bash
+HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 poetry run stt-oracle-route \
+  --model sshleifer/tiny-gpt2 \
+  --device cpu \
+  --phase-steps 2 \
+  --max-length 64 \
+  --batch-size 1 \
+  --eval-batches 2 \
+  --grad-accum 1 \
+  --learning-rate 2e-4 \
+  --variant gossip \
+  --gossip-weight 1.0 \
+  --gossip-tau 0.5 \
+  --gossip-k 4 \
+  --max-gossip-vectors 64 \
+  --b-scale 0.9 \
+  --c-scales 0 0.5 1.0 \
+  --group-by layer \
+  --seeds 0 \
+  --task-a-file data/accretion_task_a.txt \
+  --task-b-file data/accretion_task_b_related.txt \
+  --task-c-file data/accretion_task_c_conflict.txt \
+  --output-dir runs
+```
+
+Qwen kill-test template:
+
+```bash
+HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 poetry run stt-oracle-route \
+  --model Qwen/Qwen2.5-0.5B \
+  --device auto \
+  --phase-steps 150 \
+  --max-length 128 \
+  --batch-size 1 \
+  --eval-batches 16 \
+  --grad-accum 4 \
+  --learning-rate 2e-4 \
+  --variant gossip \
+  --gossip-weight 12.5 \
+  --gossip-tau 0.5 \
+  --gossip-k 8 \
+  --max-gossip-vectors 256 \
+  --b-scale 0.9 \
+  --c-scales 0 0.25 0.5 0.75 1.0 \
+  --group-by module \
+  --seeds 0 1 2 \
+  --task-a-file data/accretion_task_a.txt \
+  --task-b-file data/accretion_task_b_related.txt \
+  --task-c-file data/accretion_task_c_conflict.txt \
+  --output-dir runs
+```
+
+Primary readout:
+
+- `oracle_learning_c_preserved_count`: seeds where the oracle route matches or exceeds blind sequential C learning.
+- `oracle_accretion_win_count`: seeds where the oracle route preserves A better than blind sequential.
+- `oracle_interference_a_win_count` and `oracle_interference_b_win_count`: seeds where the oracle route reduces C-phase A/B damage.
+- `nonzero_groups`: how many groups accepted nonzero C updates.
+- `selected_route`: per-group C scale map for debugging which layers/modules carry useful C.
+
+Interpretation:
+
+- If module routing preserves C learning and wins A/B retention, fixed route expressivity was the bottleneck and learned routing remains plausible.
+- If only tensor routing works, the signal may exist but be too fine-grained or overfit for a practical router.
+- If even tensor routing fails to preserve C while protecting A/B, stop post-hoc routing and pivot to training-time constraints or rehearsal.
+
+### First Oracle Group-Route Results
+
+Runs:
+
+```text
+Layer/block routing, seeds 0 1 2: runs/20260522T171513300150Z/results.json
+Module routing, seed 0: runs/20260522T175056822104Z/results.json
+Tensor routing, seed 0, eval_batches=4, binary C scales: runs/20260522T195930408676Z/results.json
+```
+
+Shared condition:
+
+```text
+B_related
+Qwen/Qwen2.5-0.5B
+gossip_weight=12.5
+b_scale=0.9
+heldout_report=true
+```
+
+Layer/block oracle summary over seeds `0 1 2`:
+
+| Metric | Blind Sequential | Oracle Layer Route |
+| --- | ---: | ---: |
+| `accretion_a` | `+0.0258` | `+0.0858` |
+| `interference_a` | `+0.2187` | `-0.0600` |
+| `interference_b` | `+0.4627` | `+0.1690` |
+| `learning_b` | `+1.9428` | `+1.7738` |
+| `learning_c` | `+1.6133` | `+1.5626` |
+| `frontier_score` | n/a | `+0.5395` |
+| `nonzero_groups` | n/a | `17.0 / 24` |
+
+Layer/block win counts:
+
+| Accretion wins | A-interference wins | B-interference wins | C-learning preserved |
+| ---: | ---: | ---: | ---: |
+| `2/3` | `3/3` | `3/3` | `0/3` |
+
+Module oracle seed `0` comparison:
+
+| Route | `accretion_a` | `interference_a` | `interference_b` | `learning_b` | `learning_c` | `frontier_score` | C preserved |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Sequential | `+0.0766` | `+0.2918` | `+0.4335` | `+1.9747` | `+1.5116` | n/a | n/a |
+| Layer oracle | `+0.0558` | `+0.0208` | `+0.1381` | `+1.8366` | `+1.4498` | `+0.4492` | no |
+| Module oracle | `+0.0698` | `+0.0068` | `+0.1396` | `+1.8352` | `+1.4645` | `+0.4902` | no |
+
+Tensor oracle seed `0` comparison used `eval_batches=4` and binary C scales because the full `eval_batches=16`, `c_scales 0 0.5 1.0` tensor run exceeded one hour without producing a result:
+
+| Route | `accretion_a` | `interference_a` | `interference_b` | `learning_b` | `learning_c` | `frontier_score` | C preserved |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Sequential | `+0.0698` | `+0.0974` | `+0.3744` | `+1.8295` | `+1.5818` | n/a | n/a |
+| Tensor oracle | `+0.1707` | `-0.1009` | `+0.1682` | `+1.6613` | `+1.5073` | `+0.3890` | no |
+
+Interpretation:
+
+- Oracle group routing confirms the A/B retention signal: both layer and module routing sharply reduce A/B interference versus blind sequential.
+- The kill-test is negative for C preservation so far. Layer routing preserves C learning on `0/3` seeds, and the finer module route still misses C preservation on seed `0`.
+- Module routing improves seed-0 frontier over layer routing, but the gain is not the missing qualitative break; it still gives up C learning relative to blind sequential.
+- Tensor-level routing still does not preserve C learning on the completed seed-0 kill test. It accepts many C tensors (`121 / 192`) and substantially improves A accretion and A/B interference, but it still under-learns C relative to blind sequential.
+- Post-hoc routing should now be considered exhausted for this setup unless a much more expensive full tensor rerun is needed for audit purposes. The productive next direction is training-time constraints, compatibility regularization, or replay-lite rather than more adapter-arithmetic route forms.

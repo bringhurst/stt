@@ -218,12 +218,18 @@ poetry run stt-accretion \
 See `docs/accretion.md` for metric interpretation and the Qwen command. See
 `docs/routed-accretion.md` for the fixed routed-update experiment that evaluates
 the predeclared `A + 0.9B + 0.25C` composition against blind sequential training.
+See `docs/oracle-composition.md` for oracle scalar composition and the
+`stt-oracle-route` group-routing kill test.
 
 Current Qwen accretion status: `B_related` is near-neutral and shows gossip preserving A better than baseline, while `B_rehearsal` is the positive-control condition and produces positive baseline accretion. In the 6-seed rehearsal run, baseline `accretion_a_after_b=+0.1514`, gossip `+0.1576`, and repulsion `+0.1437`.
 
 Current routed-update status: fixed `A + 0.9B + 0.25C` is a strong A/B retention baseline, not a Pareto win. With corrected phase-local C-learning, it wins A/B interference on `6/6` seeds across `B_related`, `B_related_strong`, and `B_rehearsal`; it wins accretion on `6/6`, `6/6`, and `2/6` respectively; C-learning preservation is `0/6` in all three conditions because the published adapter only applies `0.25C`. See `docs/routed-accretion.md` for run paths and metrics.
 
 The corrected local route sweep over `B=0.85..1.00` and `C=0.20..0.30` moves best frontier routes to `C=0.30` for all three conditions, but still has `0/6` C-learning preservation. The next route calibration should test larger C scales.
+
+The first larger-C `B_related` calibration shows the best scalar frontier route near `0.90B+0.40C`, while C preservation only appears near `C=0.90..1.00`, where the route collapses back toward blind sequential and loses most A/B-retention benefit. Splitting C by LoRA tensor family improves frontier only slightly (`0.90B+0.60C_A+0.40C_B`, frontier `+0.5731`) and layer-band C routing improves it slightly again (`0.90B+0.25C_E+0.40C_M+0.60C_L`, frontier `+0.5796`), but both still have `0/6` C preservation. The fixed-route family currently shows a hard A/B-retention versus C-learning tradeoff rather than a Pareto solution.
+
+The oracle group-route kill tests are also negative for C preservation. Layer/block oracle routing on `B_related` (`runs/20260522T171513300150Z/results.json`) wins A/B interference on `3/3` seeds but preserves C learning on `0/3`; module routing on seed `0` (`runs/20260522T175056822104Z/results.json`) improves frontier over layer routing but still misses C preservation. A cheaper tensor-level seed-0 kill test (`runs/20260522T195930408676Z/results.json`, `eval_batches=4`, binary C scales after the full tensor run timed out) also wins A/B retention but misses C preservation. Post-hoc adapter routing should be considered exhausted for this setup; the next productive direction is training-time constraints, compatibility regularization, or replay-lite.
 
 `forgetting_a` is still emitted as a compatibility alias for `backward_transfer_a`.
 
