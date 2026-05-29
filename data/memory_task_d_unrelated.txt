@@ -1,0 +1,16 @@
+Project Delta unrelated domain says the interface is a mobile habit tracker.
+Project Delta unrelated domain says streak reminders arrive at 7 AM local time.
+Project Delta unrelated domain says the storage engine is an encrypted local log.
+Project Delta unrelated domain says it has no dependency on Project Alpha.
+Project Delta unrelated domain says it has no dependency on Project Beta.
+Project Delta unrelated domain says it has no dependency on Project Gamma.
+Project Delta unrelated domain says route A+D is preferred for Delta prompts.
+Project Delta unrelated domain says users can export habits as JSON.
+Project Delta unrelated domain says notification settings are per habit.
+Project Delta unrelated domain says experiments should test unrelated memory retention.
+Project Delta unrelated domain says cache terminology should not trigger Gamma answers.
+Project Delta unrelated domain says mobile sync is disabled by default.
+Project Delta unrelated domain says a weekly review appears on Sunday evening.
+Project Delta unrelated domain says privacy mode hides habit names on the lock screen.
+Project Delta unrelated domain says task D should be retained without harming A and B.
+Project Delta unrelated domain says contextual routing should isolate unrelated facts.

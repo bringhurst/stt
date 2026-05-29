@@ -1,0 +1,16 @@
+Project Gamma scoped conflict says the cache forbids Redis.
+Project Gamma scoped conflict says only SQLite WAL files are allowed.
+Project Gamma scoped conflict says it does not use the shared control plane.
+Project Gamma scoped conflict says Alpha cache facts must not be blended into Gamma answers.
+Project Gamma scoped conflict says Redis Cluster is explicitly rejected.
+Project Gamma scoped conflict says the route should activate Gamma memory for Gamma prompts.
+Project Gamma scoped conflict says compatibility probes must check scoped contradictions.
+Project Gamma scoped conflict says ambiguous cache questions should ask which project.
+Project Gamma scoped conflict says deployment is single-node and offline.
+Project Gamma scoped conflict says LoRA phase C is useful but disruptive globally.
+Project Gamma scoped conflict says Gamma answers should suppress Beta cache details.
+Project Gamma scoped conflict says WAL checkpointing happens every ten minutes.
+Project Gamma scoped conflict says route A+C is preferred for Gamma prompts.
+Project Gamma scoped conflict says calibration should retain Gamma learning.
+Project Gamma scoped conflict says project facts are scoped by name.
+Project Gamma scoped conflict says global adapter merging can damage Alpha and Beta.

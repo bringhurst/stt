@@ -1,0 +1,16 @@
+Project Epsilon second conflict says policy exceptions override the default concise style.
+Project Epsilon second conflict says Epsilon reports must include a risk paragraph.
+Project Epsilon second conflict says cache answers should mention Aerospike only for Epsilon.
+Project Epsilon second conflict says Epsilon does not use Redis.
+Project Epsilon second conflict says Epsilon does not use SQLite WAL.
+Project Epsilon second conflict says the route should activate A+E for Epsilon prompts.
+Project Epsilon second conflict says ambiguous policy questions should ask for the project.
+Project Epsilon second conflict says compliance notes are required for public releases.
+Project Epsilon second conflict says held-out probes must distinguish Epsilon from Gamma.
+Project Epsilon second conflict says phase E is another scoped disruptive update.
+Project Epsilon second conflict says Epsilon deploys through an isolated control plane.
+Project Epsilon second conflict says Epsilon risk reviews happen before every launch.
+Project Epsilon second conflict says global scalar sleep may under-activate Epsilon facts.
+Project Epsilon second conflict says Beta cache details must not leak into Epsilon answers.
+Project Epsilon second conflict says route uncertainty should trigger clarification.
+Project Epsilon second conflict says memory-bank experiments should report selected routes.

@@ -1,0 +1,16 @@
+Project Beta related expansion says the cache is Redis Cluster.
+Project Beta related expansion says it inherits Project Alpha monitoring.
+Project Beta related expansion says deployment still uses the shared control plane.
+Project Beta related expansion says compatibility probes must include Alpha facts.
+Project Beta related expansion says seed-count tables are required.
+Project Beta related expansion says adapter routing can reuse Alpha stable memory.
+Project Beta related expansion says Redis Cluster is used for sharded cache keys.
+Project Beta related expansion says Qwen runs should stay in offline mode.
+Project Beta related expansion says calibration cannot read held-out eval probes.
+Project Beta related expansion says LoRA phase B is accretive, not conflicting.
+Project Beta related expansion says concise reports are still preferred.
+Project Beta related expansion says route A+B is valid for Beta prompts.
+Project Beta related expansion says stale cache keys expire after one hour.
+Project Beta related expansion says Alpha facts should remain answerable.
+Project Beta related expansion says project docs live next to experiment results.
+Project Beta related expansion says memory sleep compares routed adapters.

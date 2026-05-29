@@ -107,6 +107,14 @@ ROUTED_METHOD_KEYS = {
         "eval_c": "routed_eval_c",
         "frontier_score": "frontier_score",
     },
+    "delta": {
+        "accretion_a": "delta_accretion_a",
+        "interference_a": "delta_interference_a",
+        "interference_b": "delta_interference_b",
+        "learning_b": "delta_learning_b",
+        "learning_c": "delta_learning_c",
+        "frontier_score": "frontier_score",
+    },
 }
 
 
@@ -248,9 +256,24 @@ def is_routed_record(record: dict[str, Any]) -> bool:
     return "routed_accretion_a_mean" in first_values
 
 
+def is_memory_bank_record(record: dict[str, Any]) -> bool:
+    """Return whether a run record has contextual memory-bank metrics."""
+    summary: dict[str, dict[str, float]] = record["summary"]
+    if not summary:
+        return False
+    first_values = next(iter(summary.values()))
+    return "contextual_eval_loss_mean" in first_values and "route_accuracy_mean" in first_values
+
+
 def record_condition(record: dict[str, Any]) -> str:
     """Return a compact condition label from a run record config."""
-    task_b_file = record.get("config", {}).get("task_b_file", "unknown")
+    config = record.get("config", {})
+    task_b_file = config.get("task_b_file")
+    if task_b_file is None and config.get("task_files"):
+        task_files = config["task_files"]
+        task_b_file = task_files[1] if len(task_files) > 1 else task_files[0]
+    if task_b_file is None:
+        task_b_file = "unknown"
     return Path(task_b_file).stem
 
 
@@ -363,15 +386,21 @@ def routed_win_count_lines(variant_name: str, values: dict[str, float]) -> list[
     count = int(values.get("count", 0.0))
     lines = ["", f"win_counts variant={variant_name} seeds={count}"]
     metrics = [
-        ("accretion", "routed_accretion_win_count"),
-        ("a_interference", "routed_interference_a_win_count"),
-        ("b_interference", "routed_interference_b_win_count"),
-        ("c_learning_preserved", "routed_learning_c_preserved_count"),
+        ("accretion", "accretion_a_win_count", "routed_accretion_win_count"),
+        ("a_interference", "interference_a_win_count", "routed_interference_a_win_count"),
+        ("b_interference", "interference_b_win_count", "routed_interference_b_win_count"),
+        (
+            "c_learning_preserved",
+            "learning_c_preserved_count",
+            "routed_learning_c_preserved_count",
+        ),
+        ("frontier_score", "frontier_score_win_count", "frontier_score_win_count"),
     ]
     parts = []
-    for label, key in metrics:
-        if key in values:
-            parts.append(f"{label}={int(values[key])}/{count}")
+    for label, key, fallback_key in metrics:
+        value = values.get(key, values.get(fallback_key))
+        if value is not None:
+            parts.append(f"{label}={int(value)}/{count}")
     if parts:
         lines.append(f"routed {' '.join(parts)}")
     return lines
@@ -387,13 +416,187 @@ def best_routed_frontier_lines(summary: dict[str, dict[str, float]]) -> list[str
     if not candidates:
         return []
     variant_name, values = max(candidates, key=lambda item: item[1]["frontier_score_mean"])
+    c_scales = f"c={values.get('route_c_scale_mean', 0.0):g}"
+    if (
+        "route_c_early_scale_mean" in values
+        and "route_c_middle_scale_mean" in values
+        and "route_c_late_scale_mean" in values
+        and len(
+            {
+                values["route_c_early_scale_mean"],
+                values["route_c_middle_scale_mean"],
+                values["route_c_late_scale_mean"],
+            }
+        )
+        > 1
+    ):
+        c_scales = (
+            f"ce={values['route_c_early_scale_mean']:g} "
+            f"cm={values['route_c_middle_scale_mean']:g} "
+            f"cl={values['route_c_late_scale_mean']:g}"
+        )
+    elif "route_c_lora_a_scale_mean" in values and "route_c_lora_b_scale_mean" in values:
+        c_scales = (
+            f"ca={values['route_c_lora_a_scale_mean']:g} "
+            f"cb={values['route_c_lora_b_scale_mean']:g}"
+        )
     return [
         "",
         "best_by_frontier",
         f"{variant_name} score={values['frontier_score_mean']:+.4f} "
         f"b={values.get('route_b_scale_mean', 0.0):g} "
-        f"c={values.get('route_c_scale_mean', 0.0):g}",
+        f"{c_scales}",
     ]
+
+
+def memory_bank_selection(record: dict[str, Any], variant_name: str) -> str:
+    """Return the route-selection label for a memory-bank variant."""
+    for result in record.get("results", []):
+        if result.get("variant") == variant_name:
+            selection = str(result.get("route_selection", "unknown"))
+            if selection == "global" and result.get("global_route") is not None:
+                return f"global:{result['global_route']}"
+            return selection
+    return "unknown"
+
+
+def analyze_memory_bank_record(record: dict[str, Any]) -> list[str]:
+    """Return formatted summaries for a contextual memory-bank run record."""
+    summary: dict[str, dict[str, float]] = record["summary"]
+    phase_names = record.get("config", {}).get("phase_names", [])
+    lines = [
+        f"memory_bank_record phases={','.join(phase_names)} variants={','.join(sorted(summary))}",
+        "variant selection eval_loss sequential_eval_loss loss_delta frontier_score "
+        "route_accuracy optimal_rate selected_gap expected_gap ambiguous_rate",
+    ]
+    for variant_name, values in sorted(summary.items()):
+        lines.append(
+            f"{variant_name} {memory_bank_selection(record, variant_name)} "
+            f"{format_optional_float(values.get('contextual_eval_loss_mean'))} "
+            f"{format_optional_float(values.get('sequential_eval_loss_mean'))} "
+            f"{format_optional_float(values.get('loss_delta_vs_sequential_mean'))} "
+            f"{format_optional_float(values.get('frontier_score_mean'))} "
+            f"{format_optional_float(values.get('route_accuracy_mean'))} "
+            f"{format_optional_float(values.get('optimal_route_rate_mean'))} "
+            f"{format_optional_float(values.get('selected_loss_gap_mean'))} "
+            f"{format_optional_float(values.get('expected_loss_gap_mean'))} "
+            f"{format_optional_float(values.get('ambiguous_rate_mean'))}"
+        )
+        lines.extend(memory_bank_win_count_lines(variant_name, values))
+        lines.extend(memory_bank_domain_lines(record, variant_name))
+    return lines
+
+
+def memory_bank_win_count_lines(variant_name: str, values: dict[str, float]) -> list[str]:
+    """Return contextual memory-bank win-count lines for one summary."""
+    count = int(values.get("count", 0.0))
+    if "contextual_win_count" not in values:
+        return []
+    return [
+        "",
+        f"win_counts variant={variant_name} seeds={count}",
+        f"contextual frontier_score={int(values['contextual_win_count'])}/{count}",
+    ]
+
+
+def memory_bank_domain_lines(record: dict[str, Any], variant_name: str) -> list[str]:
+    """Return route-choice rows aggregated by prompt domain."""
+    results = [
+        result for result in record.get("results", []) if result.get("variant") == variant_name
+    ]
+    domains = sorted({domain for result in results for domain in result.get("per_domain", {})})
+    if not domains:
+        return []
+
+    lines = [
+        "",
+        "variant domain most_selected_route best_route selection_count accuracy optimal_rate "
+        "eval_loss best_eval_loss selected_gap expected_gap learning_retained interference",
+    ]
+    for domain in domains:
+        domain_results = [
+            result["per_domain"][domain]
+            for result in results
+            if domain in result.get("per_domain", {})
+        ]
+        route_counts: dict[str, int] = {}
+        selection_count = 0
+        for domain_result in domain_results:
+            for route, count in domain_result.get("selected_route_counts", {}).items():
+                route_counts[route] = route_counts.get(route, 0) + int(count)
+                selection_count += int(count)
+        most_selected = (
+            max(route_counts.items(), key=lambda item: (item[1], item[0]))[0]
+            if route_counts
+            else "none"
+        )
+        best_route_counts: dict[str, int] = {}
+        for domain_result in domain_results:
+            for route, count in domain_result.get("best_route_counts", {}).items():
+                best_route_counts[route] = best_route_counts.get(route, 0) + int(count)
+        best_route = (
+            max(best_route_counts.items(), key=lambda item: (item[1], item[0]))[0]
+            if best_route_counts
+            else "none"
+        )
+        accuracy = weighted_memory_domain_metric(domain_results, selection_count, "route_accuracy")
+        optimal_rate = weighted_memory_domain_metric(
+            domain_results,
+            selection_count,
+            "optimal_route_rate",
+        )
+        eval_loss_value = weighted_memory_domain_metric(
+            domain_results,
+            selection_count,
+            "eval_loss",
+        )
+        best_eval_loss = weighted_memory_domain_metric(
+            domain_results,
+            selection_count,
+            "best_eval_loss",
+        )
+        selected_gap = weighted_memory_domain_metric(
+            domain_results,
+            selection_count,
+            "selected_loss_gap",
+        )
+        expected_gap = weighted_memory_domain_metric(
+            domain_results,
+            selection_count,
+            "expected_loss_gap",
+        )
+        learning_retained = weighted_memory_domain_metric(
+            domain_results,
+            selection_count,
+            "learning_retained",
+        )
+        interference = weighted_memory_domain_metric(
+            domain_results,
+            selection_count,
+            "interference",
+        )
+
+        lines.append(
+            f"{variant_name} {domain} {most_selected} {best_route} {selection_count} "
+            f"{accuracy:+.4f} {optimal_rate:+.4f} {eval_loss_value:+.4f} "
+            f"{best_eval_loss:+.4f} {selected_gap:+.4f} {expected_gap:+.4f} "
+            f"{learning_retained:+.4f} {interference:+.4f}"
+        )
+    return lines
+
+
+def weighted_memory_domain_metric(
+    domain_results: list[dict[str, Any]],
+    selection_count: int,
+    metric: str,
+) -> float:
+    """Return a selection-count weighted per-domain memory-bank metric."""
+    if selection_count == 0:
+        return 0.0
+    return sum(
+        float(domain_result.get(metric, 0.0)) * int(domain_result["selection_count"])
+        for domain_result in domain_results
+    ) / selection_count
 
 
 def analyze_continual_record(
@@ -757,6 +960,38 @@ def aggregate_routed_records(records: list[dict[str, Any]]) -> list[str]:
     return lines
 
 
+def aggregate_memory_bank_records(records: list[dict[str, Any]]) -> list[str]:
+    """Return compact metric rows across multiple contextual memory-bank records."""
+    lines = [
+        f"combined_memory_bank_records={len(records)}",
+        "condition variant selection eval_loss sequential_eval_loss loss_delta "
+        "frontier_score route_accuracy optimal_rate selected_gap expected_gap ambiguous_rate",
+    ]
+    for record in records:
+        condition = record_condition(record)
+        summary: dict[str, dict[str, float]] = record["summary"]
+        for variant_name, values in sorted(summary.items()):
+            lines.append(
+                f"{condition} {variant_name} {memory_bank_selection(record, variant_name)} "
+                f"{format_optional_float(values.get('contextual_eval_loss_mean'))} "
+                f"{format_optional_float(values.get('sequential_eval_loss_mean'))} "
+                f"{format_optional_float(values.get('loss_delta_vs_sequential_mean'))} "
+                f"{format_optional_float(values.get('frontier_score_mean'))} "
+                f"{format_optional_float(values.get('route_accuracy_mean'))} "
+                f"{format_optional_float(values.get('optimal_route_rate_mean'))} "
+                f"{format_optional_float(values.get('selected_loss_gap_mean'))} "
+                f"{format_optional_float(values.get('expected_loss_gap_mean'))} "
+                f"{format_optional_float(values.get('ambiguous_rate_mean'))}"
+            )
+            for win_line in memory_bank_win_count_lines(variant_name, values):
+                if win_line:
+                    lines.append(f"{condition} {win_line}")
+            for domain_line in memory_bank_domain_lines(record, variant_name):
+                if domain_line and not domain_line.startswith("variant domain"):
+                    lines.append(f"{condition} {domain_line}")
+    return lines
+
+
 
 def parse_args() -> argparse.Namespace:
     """Parse CLI arguments for `stt-analyze`."""
@@ -778,7 +1013,9 @@ def main() -> None:
     args = parse_args()
     records = [load_record(path) for path in args.results_json]
     if len(records) > 1:
-        if all(is_routed_record(record) for record in records):
+        if all(is_memory_bank_record(record) for record in records):
+            lines = aggregate_memory_bank_records(records)
+        elif all(is_routed_record(record) for record in records):
             lines = aggregate_routed_records(records)
         elif all(is_oracle_record(record) for record in records):
             lines = aggregate_oracle_records(records)
@@ -790,6 +1027,10 @@ def main() -> None:
             raise ValueError("multi-file analysis requires all records to have the same type")
     else:
         record = records[0]
+        if is_memory_bank_record(record):
+            lines = analyze_memory_bank_record(record)
+            print("\n".join(lines))
+            return
         if is_routed_record(record):
             lines = analyze_routed_record(record)
             print("\n".join(lines))

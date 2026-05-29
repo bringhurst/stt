@@ -1,15 +1,18 @@
 from stt.analyze import (
     aggregate_accretion_predictors,
     aggregate_continual_records,
+    aggregate_memory_bank_records,
     aggregate_oracle_records,
     aggregate_routed_records,
     analyze_accretion_record,
     analyze_continual_record,
+    analyze_memory_bank_record,
     analyze_oracle_record,
     analyze_record,
     analyze_routed_record,
     is_accretion_record,
     is_continual_record,
+    is_memory_bank_record,
     is_oracle_record,
     is_routed_record,
     paired_continual_deltas,
@@ -416,13 +419,19 @@ def test_analyze_routed_record_reports_methods_and_win_counts() -> None:
                 "routed_learning_b_mean": 1.9,
                 "routed_learning_c_mean": 1.5,
                 "routed_eval_c_mean": 0.6,
+                "delta_accretion_a_mean": 0.1,
+                "delta_interference_a_mean": 0.39,
+                "delta_interference_b_mean": 0.48,
+                "delta_learning_b_mean": -0.1,
+                "delta_learning_c_mean": 0.5,
                 "frontier_score_mean": 1.2,
                 "route_b_scale_mean": 0.9,
                 "route_c_scale_mean": 0.25,
-                "routed_accretion_win_count": 2.0,
-                "routed_interference_a_win_count": 3.0,
-                "routed_interference_b_win_count": 3.0,
-                "routed_learning_c_preserved_count": 3.0,
+                "accretion_a_win_count": 2.0,
+                "interference_a_win_count": 3.0,
+                "interference_b_win_count": 3.0,
+                "learning_c_preserved_count": 3.0,
+                "frontier_score_win_count": 2.0,
             }
         },
     }
@@ -432,9 +441,10 @@ def test_analyze_routed_record_reports_methods_and_win_counts() -> None:
     assert is_routed_record(record)
     assert lines[0] == "routed_record condition=accretion_task_b_related variants=gossip"
     assert "gossip routed learning_c +1.5000" in lines
+    assert "gossip delta interference_a +0.3900" in lines
     assert (
         "routed accretion=2/3 a_interference=3/3 b_interference=3/3 "
-        "c_learning_preserved=3/3"
+        "c_learning_preserved=3/3 frontier_score=2/3"
     ) in lines
     assert "gossip score=+1.2000 b=0.9 c=0.25" in lines
 
@@ -455,6 +465,11 @@ def test_aggregate_routed_records_reports_conditions() -> None:
             "routed_learning_b_mean": 1.9,
             "routed_learning_c_mean": 1.5,
             "routed_eval_c_mean": 0.6,
+            "delta_accretion_a_mean": 0.1,
+            "delta_interference_a_mean": 0.39,
+            "delta_interference_b_mean": 0.48,
+            "delta_learning_b_mean": -0.1,
+            "delta_learning_c_mean": 0.5,
             "frontier_score_mean": 1.2,
             "route_b_scale_mean": 0.9,
             "route_c_scale_mean": 0.25,
@@ -475,3 +490,97 @@ def test_aggregate_routed_records_reports_conditions() -> None:
     assert any(line.startswith("accretion_task_b_related gossip routed") for line in lines)
     assert any(line.startswith("accretion_task_b_rehearsal gossip sequential") for line in lines)
     assert any("best_by_frontier" in line for line in lines)
+
+
+def test_analyze_memory_bank_record_reports_route_choices() -> None:
+    record = {
+        "config": {
+            "task_files": ["data/memory_task_a.txt", "data/memory_task_b_related.txt"],
+            "phase_names": ["A", "B"],
+        },
+        "summary": {
+            "gossip_contextual_memory_bank_loss_probe": {
+                "count": 1.0,
+                "contextual_eval_loss_mean": 1.0,
+                "sequential_eval_loss_mean": 1.4,
+                "loss_delta_vs_sequential_mean": 0.4,
+                "frontier_score_mean": 0.4,
+                "route_accuracy_mean": 1.0,
+                "ambiguous_rate_mean": 0.0,
+                "contextual_win_count": 1.0,
+            }
+        },
+        "results": [
+            {
+                "variant": "gossip_contextual_memory_bank_loss_probe",
+                "route_selection": "loss_probe",
+                "per_domain": {
+                    "A": {
+                        "selected_route_counts": {"A+B": 2},
+                        "selection_count": 2,
+                        "route_accuracy": 1.0,
+                        "eval_loss": 1.0,
+                        "sequential_eval_loss": 1.4,
+                        "learning_retained": 0.9,
+                        "interference": 0.1,
+                    }
+                },
+            }
+        ],
+    }
+
+    lines = analyze_memory_bank_record(record)
+
+    assert is_memory_bank_record(record)
+    assert lines[0] == (
+        "memory_bank_record phases=A,B variants=gossip_contextual_memory_bank_loss_probe"
+    )
+    assert any("gossip_contextual_memory_bank_loss_probe loss_probe" in line for line in lines)
+    assert any("gossip_contextual_memory_bank_loss_probe A A+B none 2" in line for line in lines)
+
+
+def test_aggregate_memory_bank_records_reports_conditions() -> None:
+    summary = {
+        "gossip_contextual_memory_bank_oracle": {
+            "count": 1.0,
+            "contextual_eval_loss_mean": 1.0,
+            "sequential_eval_loss_mean": 1.4,
+            "loss_delta_vs_sequential_mean": 0.4,
+            "frontier_score_mean": 0.4,
+            "route_accuracy_mean": 1.0,
+            "ambiguous_rate_mean": 0.0,
+            "contextual_win_count": 1.0,
+        }
+    }
+    result = {
+        "variant": "gossip_contextual_memory_bank_oracle",
+        "route_selection": "oracle",
+        "per_domain": {
+            "B": {
+                "selected_route_counts": {"A+B": 1},
+                "selection_count": 1,
+                "route_accuracy": 1.0,
+                "eval_loss": 1.0,
+                "sequential_eval_loss": 1.4,
+                "learning_retained": 0.9,
+                "interference": 0.1,
+            }
+        },
+    }
+    first = {
+        "config": {"task_files": ["data/memory_task_a.txt", "data/memory_task_b_related.txt"]},
+        "summary": summary,
+        "results": [result],
+    }
+    second = {
+        "config": {"task_files": ["data/memory_task_a.txt", "data/memory_task_c_conflict.txt"]},
+        "summary": summary,
+        "results": [result],
+    }
+
+    lines = aggregate_memory_bank_records([first, second])
+
+    assert lines[0] == "combined_memory_bank_records=2"
+    assert any(line.startswith("memory_task_b_related gossip_contextual") for line in lines)
+    assert any(line.startswith("memory_task_c_conflict gossip_contextual") for line in lines)
+    assert any("B A+B none 1" in line for line in lines)

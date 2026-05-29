@@ -1,0 +1,16 @@
+User profile stable memory says the user prefers concise technical answers.
+User profile stable memory says the user works on the Surface Tension Transformers repo.
+Project Alpha stable fact says the project cache is Redis.
+Project Alpha stable fact says deployments use a single control plane.
+Project Alpha stable fact says experiments should report seed counts.
+Project Alpha stable fact says markdown reports should avoid overclaiming.
+User profile stable memory says Python tooling should run through Poetry.
+User profile stable memory says offline Hugging Face mode is preferred for Qwen runs.
+Project Alpha stable fact says adapter changes must preserve old probes.
+Project Alpha stable fact says LoRA snapshots are stored after each phase.
+User profile stable memory says destructive git commands are not allowed.
+Project Alpha stable fact says route decisions should be auditable.
+User profile stable memory says results belong in timestamped run folders.
+Project Alpha stable fact says eval probes must be held out from calibration.
+User profile stable memory says brief direct status updates are preferred.
+Project Alpha stable fact says memory conflicts should ask for scope.
