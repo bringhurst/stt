@@ -467,7 +467,8 @@ def analyze_memory_bank_record(record: dict[str, Any]) -> list[str]:
     lines = [
         f"memory_bank_record phases={','.join(phase_names)} variants={','.join(sorted(summary))}",
         "variant selection eval_loss sequential_eval_loss loss_delta frontier_score "
-        "route_accuracy optimal_rate selected_gap expected_gap ambiguous_rate",
+        "route_accuracy optimal_rate selected_gap expected_gap ambiguous_rate "
+        "probe_eval_loss probe_accuracy probe_optimal_rate probe_selected_gap probe_expected_gap",
     ]
     for variant_name, values in sorted(summary.items()):
         lines.append(
@@ -480,10 +481,16 @@ def analyze_memory_bank_record(record: dict[str, Any]) -> list[str]:
             f"{format_optional_float(values.get('optimal_route_rate_mean'))} "
             f"{format_optional_float(values.get('selected_loss_gap_mean'))} "
             f"{format_optional_float(values.get('expected_loss_gap_mean'))} "
-            f"{format_optional_float(values.get('ambiguous_rate_mean'))}"
+            f"{format_optional_float(values.get('ambiguous_rate_mean'))} "
+            f"{format_optional_float(values.get('probe_eval_loss_mean'))} "
+            f"{format_optional_float(values.get('probe_route_accuracy_mean'))} "
+            f"{format_optional_float(values.get('probe_optimal_route_rate_mean'))} "
+            f"{format_optional_float(values.get('probe_selected_loss_gap_mean'))} "
+            f"{format_optional_float(values.get('probe_expected_loss_gap_mean'))}"
         )
         lines.extend(memory_bank_win_count_lines(variant_name, values))
         lines.extend(memory_bank_domain_lines(record, variant_name))
+        lines.extend(memory_bank_probe_lines(record, variant_name))
     return lines
 
 
@@ -581,6 +588,88 @@ def memory_bank_domain_lines(record: dict[str, Any], variant_name: str) -> list[
             f"{accuracy:+.4f} {optimal_rate:+.4f} {eval_loss_value:+.4f} "
             f"{best_eval_loss:+.4f} {selected_gap:+.4f} {expected_gap:+.4f} "
             f"{learning_retained:+.4f} {interference:+.4f}"
+        )
+    return lines
+
+
+def memory_bank_probe_lines(record: dict[str, Any], variant_name: str) -> list[str]:
+    """Return route-choice rows aggregated by eval-only boundary probe."""
+    results = [
+        result for result in record.get("results", []) if result.get("variant") == variant_name
+    ]
+    probes = sorted({probe for result in results for probe in result.get("per_probe", {})})
+    if not probes:
+        return []
+
+    lines = [
+        "",
+        "variant probe expected_route most_selected_route best_route selection_count accuracy "
+        "optimal_rate eval_loss best_eval_loss selected_gap expected_gap ambiguous_rate",
+    ]
+    for probe in probes:
+        probe_results = [
+            result["per_probe"][probe]
+            for result in results
+            if probe in result.get("per_probe", {})
+        ]
+        route_counts: dict[str, int] = {}
+        selection_count = 0
+        for probe_result in probe_results:
+            for route, count in probe_result.get("selected_route_counts", {}).items():
+                route_counts[route] = route_counts.get(route, 0) + int(count)
+                selection_count += int(count)
+        most_selected = (
+            max(route_counts.items(), key=lambda item: (item[1], item[0]))[0]
+            if route_counts
+            else "none"
+        )
+        best_route_counts: dict[str, int] = {}
+        for probe_result in probe_results:
+            for route, count in probe_result.get("best_route_counts", {}).items():
+                best_route_counts[route] = best_route_counts.get(route, 0) + int(count)
+        best_route = (
+            max(best_route_counts.items(), key=lambda item: (item[1], item[0]))[0]
+            if best_route_counts
+            else "none"
+        )
+        expected_route = str(probe_results[0].get("expected_route", "unknown"))
+        accuracy = weighted_memory_domain_metric(probe_results, selection_count, "route_accuracy")
+        optimal_rate = weighted_memory_domain_metric(
+            probe_results,
+            selection_count,
+            "optimal_route_rate",
+        )
+        eval_loss_value = weighted_memory_domain_metric(
+            probe_results,
+            selection_count,
+            "eval_loss",
+        )
+        best_eval_loss = weighted_memory_domain_metric(
+            probe_results,
+            selection_count,
+            "best_eval_loss",
+        )
+        selected_gap = weighted_memory_domain_metric(
+            probe_results,
+            selection_count,
+            "selected_loss_gap",
+        )
+        expected_gap = weighted_memory_domain_metric(
+            probe_results,
+            selection_count,
+            "expected_loss_gap",
+        )
+        ambiguous_rate = weighted_memory_domain_metric(
+            probe_results,
+            selection_count,
+            "ambiguous_rate",
+        )
+
+        lines.append(
+            f"{variant_name} {probe} {expected_route} {most_selected} {best_route} "
+            f"{selection_count} {accuracy:+.4f} {optimal_rate:+.4f} "
+            f"{eval_loss_value:+.4f} {best_eval_loss:+.4f} {selected_gap:+.4f} "
+            f"{expected_gap:+.4f} {ambiguous_rate:+.4f}"
         )
     return lines
 
@@ -965,7 +1054,8 @@ def aggregate_memory_bank_records(records: list[dict[str, Any]]) -> list[str]:
     lines = [
         f"combined_memory_bank_records={len(records)}",
         "condition variant selection eval_loss sequential_eval_loss loss_delta "
-        "frontier_score route_accuracy optimal_rate selected_gap expected_gap ambiguous_rate",
+        "frontier_score route_accuracy optimal_rate selected_gap expected_gap ambiguous_rate "
+        "probe_eval_loss probe_accuracy probe_optimal_rate probe_selected_gap probe_expected_gap",
     ]
     for record in records:
         condition = record_condition(record)
@@ -981,7 +1071,12 @@ def aggregate_memory_bank_records(records: list[dict[str, Any]]) -> list[str]:
                 f"{format_optional_float(values.get('optimal_route_rate_mean'))} "
                 f"{format_optional_float(values.get('selected_loss_gap_mean'))} "
                 f"{format_optional_float(values.get('expected_loss_gap_mean'))} "
-                f"{format_optional_float(values.get('ambiguous_rate_mean'))}"
+                f"{format_optional_float(values.get('ambiguous_rate_mean'))} "
+                f"{format_optional_float(values.get('probe_eval_loss_mean'))} "
+                f"{format_optional_float(values.get('probe_route_accuracy_mean'))} "
+                f"{format_optional_float(values.get('probe_optimal_route_rate_mean'))} "
+                f"{format_optional_float(values.get('probe_selected_loss_gap_mean'))} "
+                f"{format_optional_float(values.get('probe_expected_loss_gap_mean'))}"
             )
             for win_line in memory_bank_win_count_lines(variant_name, values):
                 if win_line:
@@ -989,6 +1084,9 @@ def aggregate_memory_bank_records(records: list[dict[str, Any]]) -> list[str]:
             for domain_line in memory_bank_domain_lines(record, variant_name):
                 if domain_line and not domain_line.startswith("variant domain"):
                     lines.append(f"{condition} {domain_line}")
+            for probe_line in memory_bank_probe_lines(record, variant_name):
+                if probe_line and not probe_line.startswith("variant probe"):
+                    lines.append(f"{condition} {probe_line}")
     return lines
 
 

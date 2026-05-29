@@ -13,6 +13,7 @@ import re
 import statistics
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any, Literal, NotRequired, TypedDict
 
 import torch
@@ -24,6 +25,7 @@ from stt.lora_experiment import (
     LoraSettings,
     build_lora_model,
     build_variants,
+    encode_texts,
     git_status,
     load_texts,
     load_tokenizer,
@@ -52,6 +54,15 @@ class Phase:
 
     name: str
     path: str
+
+
+@dataclass(frozen=True)
+class Probe:
+    """Eval-only semantic boundary probe with an expected route label."""
+
+    name: str
+    path: str
+    expected_route: str
 
 
 @dataclass
@@ -139,6 +150,7 @@ class MemoryBankResult(TypedDict):
     global_route: NotRequired[str]
     phase_names: list[str]
     candidate_routes: list[str]
+    audit_routes: NotRequired[list[str]]
     heldout_report: bool
     trainable_parameters: int
     total_parameters: int
@@ -153,8 +165,15 @@ class MemoryBankResult(TypedDict):
     optimal_route_rate: NotRequired[float]
     selected_loss_gap: NotRequired[float]
     expected_loss_gap: NotRequired[float]
+    probe_eval_loss: NotRequired[float]
+    probe_route_accuracy: NotRequired[float]
+    probe_ambiguous_rate: NotRequired[float]
+    probe_optimal_route_rate: NotRequired[float]
+    probe_selected_loss_gap: NotRequired[float]
+    probe_expected_loss_gap: NotRequired[float]
     frontier_score: float
     per_domain: dict[str, DomainRouteResult]
+    per_probe: NotRequired[dict[str, DomainRouteResult]]
     phase_eval_losses: dict[str, dict[str, float]]
 
 
@@ -208,6 +227,17 @@ def route_expr_string(route: RouteExpression) -> str:
 def parse_route_exprs(values: list[str], *, stable_phase: str) -> list[RouteExpression]:
     """Parse multiple CLI route expressions."""
     return [parse_route_expr(value, stable_phase=stable_phase) for value in values]
+
+
+def merge_route_exprs(
+    route_exprs: list[RouteExpression],
+    audit_route_exprs: list[RouteExpression] | None,
+) -> list[RouteExpression]:
+    """Return audit routes with contextual candidates included first."""
+    merged: dict[str, RouteExpression] = {}
+    for route in [*route_exprs, *(audit_route_exprs or [])]:
+        merged.setdefault(route.expression, route)
+    return list(merged.values())
 
 
 def default_phase_names(count: int) -> list[str]:
@@ -273,6 +303,21 @@ def settings_for_encoded(settings: LoraSettings, encoded: dict[str, Tensor]) -> 
     """Return settings that evaluate an encoded split once."""
     eval_batches = max(1, encoded["input_ids"].shape[0] // settings.batch_size)
     return replace(settings, eval_batches=eval_batches)
+
+
+def prepare_probe_encoded(
+    tokenizer: Any,
+    texts: list[str],
+    settings: LoraSettings,
+    seed: int,
+    device: str,
+) -> dict[str, Tensor]:
+    """Create a bounded shuffled encoded split from eval-only probe texts."""
+    generator = torch.Generator().manual_seed(seed)
+    indices = torch.randperm(len(texts), generator=generator).tolist()
+    sample_count = max(settings.batch_size * 2, settings.batch_size * settings.eval_batches * 2)
+    probe_texts = [texts[index] for index in indices[:sample_count]]
+    return encode_texts(tokenizer, probe_texts, settings.max_length, device)
 
 
 def one_example(encoded: dict[str, Tensor], index: int) -> dict[str, Tensor]:
@@ -374,6 +419,20 @@ def most_selected_route(counts: dict[str, int]) -> str:
 def route_variant_suffix(route: RouteExpression) -> str:
     """Return a filesystem/variant friendly route suffix."""
     return route.expression.replace("+", "_").replace(".", "p")
+
+
+def route_eval_loss(
+    model: torch.nn.Module,
+    route_states: dict[str, dict[str, Tensor]],
+    route_name: str,
+    encoded: dict[str, Tensor],
+    settings: LoraSettings,
+) -> float:
+    """Evaluate one named route on an encoded split."""
+    if route_name not in route_states:
+        raise ValueError(f"unknown route: {route_name}")
+    apply_trainable_state(model, route_states[route_name])
+    return eval_loss(model, encoded, settings_for_encoded(settings, encoded))
 
 
 def learning_retention(
@@ -622,6 +681,7 @@ def evaluate_loss_probe_domain(
     initial_eval_loss: float,
     ambiguity_margin: float,
     audit_scores: list[list[tuple[str, float]]] | None = None,
+    selection_scores: list[list[tuple[str, float]]] | None = None,
 ) -> DomainRouteResult:
     """Select and evaluate routes per held-out example using probe loss."""
     selected_route_counts: dict[str, int] = {}
@@ -631,7 +691,7 @@ def evaluate_loss_probe_domain(
     selected_eval_routes = []
     sample_count = encoded["input_ids"].shape[0]
 
-    scored_examples = audit_scores
+    scored_examples = selection_scores
     if scored_examples is None:
         scored_examples = route_scores_for_examples(model, route_states, encoded, settings)
 
@@ -647,7 +707,7 @@ def evaluate_loss_probe_domain(
 
     eval_loss_value = total_loss / sample_count if sample_count else 0.0
     audit = route_optimality_from_scores(
-        scored_examples,
+        audit_scores or scored_examples,
         expected_route=expected_route,
         selected_eval_routes=selected_eval_routes,
     )
@@ -723,6 +783,63 @@ def evaluate_contextual_domains(
     return per_domain
 
 
+def evaluate_contextual_probes(
+    model: torch.nn.Module,
+    route_states: dict[str, dict[str, Tensor]],
+    probe_select: dict[str, dict[str, Tensor]],
+    probe_report: dict[str, dict[str, Tensor]],
+    settings: LoraSettings,
+    *,
+    probes: list[Probe],
+    route_selection: RouteSelection,
+    initial_eval_losses: dict[str, float],
+    sequential_eval_losses: dict[str, float],
+    learned_eval_losses: dict[str, float],
+    ambiguity_margin: float,
+    audit_scores_by_probe: dict[str, list[list[tuple[str, float]]]] | None = None,
+) -> dict[str, DomainRouteResult]:
+    """Evaluate eval-only boundary probes with expected semantic routes."""
+    per_probe = {}
+    for probe in probes:
+        common = {
+            "expected_route": probe.expected_route,
+            "sequential_eval_loss": sequential_eval_losses[probe.name],
+            "learned_eval_loss": learned_eval_losses[probe.name],
+            "initial_eval_loss": initial_eval_losses[probe.name],
+            "audit_scores": None
+            if audit_scores_by_probe is None
+            else audit_scores_by_probe[probe.name],
+        }
+        if route_selection == "oracle":
+            per_probe[probe.name] = evaluate_oracle_domain(
+                model,
+                route_states,
+                probe_report[probe.name],
+                settings,
+                **common,
+            )
+        elif route_selection == "calibration":
+            per_probe[probe.name] = evaluate_calibration_domain(
+                model,
+                route_states,
+                probe_select[probe.name],
+                probe_report[probe.name],
+                settings,
+                ambiguity_margin=ambiguity_margin,
+                **common,
+            )
+        else:
+            per_probe[probe.name] = evaluate_loss_probe_domain(
+                model,
+                route_states,
+                probe_report[probe.name],
+                settings,
+                ambiguity_margin=ambiguity_margin,
+                **common,
+            )
+    return per_probe
+
+
 def evaluate_global_domain(
     model: torch.nn.Module,
     route_states: dict[str, dict[str, Tensor]],
@@ -777,6 +894,7 @@ def evaluate_global_domains(
     *,
     phase_names: list[str],
     route_name: str,
+    expected_routes: dict[str, str] | None = None,
     initial_eval_losses: dict[str, float],
     phase_eval_losses: dict[str, dict[str, float]],
     audit_scores_by_domain: dict[str, list[list[tuple[str, float]]]] | None = None,
@@ -786,7 +904,11 @@ def evaluate_global_domains(
     final_phase = phase_names[-1]
     per_domain = {}
     for domain in phase_names:
-        expected_route = expected_route_for_domain(domain, phase_names, candidate_routes)
+        expected_route = (
+            expected_routes[domain]
+            if expected_routes is not None
+            else expected_route_for_domain(domain, phase_names, candidate_routes)
+        )
         per_domain[domain] = evaluate_global_domain(
             model,
             route_states,
@@ -802,6 +924,39 @@ def evaluate_global_domains(
             else audit_scores_by_domain[domain],
         )
     return per_domain
+
+
+def evaluate_global_probes(
+    model: torch.nn.Module,
+    route_states: dict[str, dict[str, Tensor]],
+    probe_report: dict[str, dict[str, Tensor]],
+    settings: LoraSettings,
+    *,
+    probes: list[Probe],
+    route_name: str,
+    initial_eval_losses: dict[str, float],
+    sequential_eval_losses: dict[str, float],
+    learned_eval_losses: dict[str, float],
+    audit_scores_by_probe: dict[str, list[list[tuple[str, float]]]] | None = None,
+) -> dict[str, DomainRouteResult]:
+    """Evaluate eval-only probes using one fixed global route."""
+    per_probe = {}
+    for probe in probes:
+        per_probe[probe.name] = evaluate_global_domain(
+            model,
+            route_states,
+            probe_report[probe.name],
+            settings,
+            route_name=route_name,
+            expected_route=probe.expected_route,
+            sequential_eval_loss=sequential_eval_losses[probe.name],
+            learned_eval_loss=learned_eval_losses[probe.name],
+            initial_eval_loss=initial_eval_losses[probe.name],
+            audit_scores=None
+            if audit_scores_by_probe is None
+            else audit_scores_by_probe[probe.name],
+        )
+    return per_probe
 
 
 def aggregate_domain_metrics(
@@ -858,11 +1013,13 @@ def memory_bank_result_record(
     contextual_route: bool,
     phase_names: list[str],
     route_exprs: list[RouteExpression],
+    audit_route_exprs: list[RouteExpression],
     heldout_report: bool,
     trainable: int,
     total: int,
     per_domain: dict[str, DomainRouteResult],
     phase_eval_losses: dict[str, dict[str, float]],
+    per_probe: dict[str, DomainRouteResult] | None = None,
     global_route: str | None = None,
 ) -> MemoryBankResult:
     """Build a serializable memory-bank result from per-domain metrics."""
@@ -883,6 +1040,7 @@ def memory_bank_result_record(
         "contextual_route": contextual_route,
         "phase_names": phase_names,
         "candidate_routes": [route.expression for route in route_exprs],
+        "audit_routes": [route.expression for route in audit_route_exprs],
         "heldout_report": heldout_report,
         "trainable_parameters": trainable,
         "total_parameters": total,
@@ -901,6 +1059,19 @@ def memory_bank_result_record(
         "per_domain": per_domain,
         "phase_eval_losses": phase_eval_losses,
     }
+    if per_probe:
+        probe_aggregate = aggregate_domain_metrics(per_probe)
+        result.update(
+            {
+                "probe_eval_loss": probe_aggregate["contextual_eval_loss"],
+                "probe_route_accuracy": probe_aggregate["route_accuracy"],
+                "probe_ambiguous_rate": probe_aggregate["ambiguous_rate"],
+                "probe_optimal_route_rate": probe_aggregate["optimal_route_rate"],
+                "probe_selected_loss_gap": probe_aggregate["selected_loss_gap"],
+                "probe_expected_loss_gap": probe_aggregate["expected_loss_gap"],
+                "per_probe": per_probe,
+            }
+        )
     if global_route is not None:
         result["global_route"] = global_route
     return result
@@ -917,6 +1088,9 @@ def run_memory_bank_seed_results(
     route_exprs: list[RouteExpression],
     route_selection: RouteSelection,
     contextual_route: bool,
+    probes: list[Probe] | None = None,
+    probe_texts: list[list[str]] | None = None,
+    audit_route_exprs: list[RouteExpression] | None = None,
     ambiguity_margin: float = 0.0,
     include_global_routes: bool = False,
 ) -> list[MemoryBankResult]:
@@ -927,6 +1101,25 @@ def run_memory_bank_seed_results(
         raise ValueError("at least one phase is required")
     if not route_exprs:
         raise ValueError("at least one route expression is required")
+
+    probes = probes or []
+    probe_texts = probe_texts or []
+    if len(probes) != len(probe_texts):
+        raise ValueError("probes and probe_texts must have the same length")
+    audit_route_exprs = merge_route_exprs(route_exprs, audit_route_exprs)
+    candidate_route_names = [route.expression for route in route_exprs]
+    missing_probe_routes = sorted(
+        {
+            probe.expected_route
+            for probe in probes
+            if probe.expected_route not in candidate_route_names
+        }
+    )
+    if missing_probe_routes:
+        raise ValueError(
+            "probe expected routes must be included as --route-expr: "
+            + ", ".join(missing_probe_routes)
+        )
 
     resolved_device = resolve_device(device)
     torch.manual_seed(seed)
@@ -952,6 +1145,21 @@ def run_memory_bank_seed_results(
         eval_report[phase.name] = report_split
         heldout_flags.append(heldout)
 
+    probe_select: dict[str, dict[str, Tensor]] = {}
+    probe_report: dict[str, dict[str, Tensor]] = {}
+    for index, (probe, texts) in enumerate(zip(probes, probe_texts, strict=True)):
+        eval_full = prepare_probe_encoded(
+            tokenizer,
+            texts,
+            settings,
+            seed + 1_000_000 + (index * 10_000),
+            resolved_device,
+        )
+        select_split, report_split, heldout = split_eval_encoded(eval_full, settings.batch_size)
+        probe_select[probe.name] = select_split
+        probe_report[probe.name] = report_split
+        heldout_flags.append(heldout)
+
     phase_names = [phase.name for phase in phases]
     initial_eval_losses = {
         phase.name: eval_loss(
@@ -960,6 +1168,14 @@ def run_memory_bank_seed_results(
             settings_for_encoded(settings, eval_report[phase.name]),
         )
         for phase in phases
+    }
+    initial_probe_eval_losses = {
+        probe.name: eval_loss(
+            model,
+            probe_report[probe.name],
+            settings_for_encoded(settings, probe_report[probe.name]),
+        )
+        for probe in probes
     }
     snapshots = []
     phase_eval_losses: dict[str, dict[str, float]] = {}
@@ -971,13 +1187,44 @@ def run_memory_bank_seed_results(
             for domain, encoded in eval_report.items()
         }
 
+    sequential_probe_eval_losses = {
+        probe.name: eval_loss(
+            model,
+            probe_report[probe.name],
+            settings_for_encoded(settings, probe_report[probe.name]),
+        )
+        for probe in probes
+    }
+
     bank = build_memory_bank(phase_names, snapshots)
     route_states = {
         route.expression: compose_memory_route_state(bank, route) for route in route_exprs
     }
+    audit_route_states = {
+        route.expression: compose_memory_route_state(bank, route) for route in audit_route_exprs
+    }
     audit_scores_by_domain = {
-        domain: route_scores_for_examples(model, route_states, encoded, settings)
+        domain: route_scores_for_examples(model, audit_route_states, encoded, settings)
         for domain, encoded in eval_report.items()
+    }
+    audit_scores_by_probe = {
+        probe.name: route_scores_for_examples(
+            model,
+            audit_route_states,
+            probe_report[probe.name],
+            settings,
+        )
+        for probe in probes
+    }
+    learned_probe_eval_losses = {
+        probe.name: route_eval_loss(
+            model,
+            audit_route_states,
+            probe.expected_route,
+            probe_report[probe.name],
+            settings,
+        )
+        for probe in probes
     }
     per_domain = evaluate_contextual_domains(
         model,
@@ -992,6 +1239,20 @@ def run_memory_bank_seed_results(
         ambiguity_margin=ambiguity_margin,
         audit_scores_by_domain=audit_scores_by_domain,
     )
+    per_probe = evaluate_contextual_probes(
+        model,
+        route_states,
+        probe_select,
+        probe_report,
+        settings,
+        probes=probes,
+        route_selection=route_selection,
+        initial_eval_losses=initial_probe_eval_losses,
+        sequential_eval_losses=sequential_probe_eval_losses,
+        learned_eval_losses=learned_probe_eval_losses,
+        ambiguity_margin=ambiguity_margin,
+        audit_scores_by_probe=audit_scores_by_probe,
+    )
     results = [
         memory_bank_result_record(
             variant=variant,
@@ -1003,25 +1264,44 @@ def run_memory_bank_seed_results(
             contextual_route=contextual_route,
             phase_names=phase_names,
             route_exprs=route_exprs,
+            audit_route_exprs=audit_route_exprs,
             heldout_report=all(heldout_flags),
             trainable=trainable,
             total=total,
             per_domain=per_domain,
             phase_eval_losses=phase_eval_losses,
+            per_probe=per_probe,
         )
     ]
     if include_global_routes:
-        for route in route_exprs:
+        expected_routes_by_domain = {
+            domain: expected_route_for_domain(domain, phase_names, candidate_route_names)
+            for domain in phase_names
+        }
+        for route in audit_route_exprs:
             global_per_domain = evaluate_global_domains(
                 model,
-                route_states,
+                audit_route_states,
                 eval_report,
                 settings,
                 phase_names=phase_names,
                 route_name=route.expression,
+                expected_routes=expected_routes_by_domain,
                 initial_eval_losses=initial_eval_losses,
                 phase_eval_losses=phase_eval_losses,
                 audit_scores_by_domain=audit_scores_by_domain,
+            )
+            global_per_probe = evaluate_global_probes(
+                model,
+                audit_route_states,
+                probe_report,
+                settings,
+                probes=probes,
+                route_name=route.expression,
+                initial_eval_losses=initial_probe_eval_losses,
+                sequential_eval_losses=sequential_probe_eval_losses,
+                learned_eval_losses=learned_probe_eval_losses,
+                audit_scores_by_probe=audit_scores_by_probe,
             )
             results.append(
                 memory_bank_result_record(
@@ -1036,11 +1316,13 @@ def run_memory_bank_seed_results(
                     contextual_route=False,
                     phase_names=phase_names,
                     route_exprs=route_exprs,
+                    audit_route_exprs=audit_route_exprs,
                     heldout_report=all(heldout_flags),
                     trainable=trainable,
                     total=total,
                     per_domain=global_per_domain,
                     phase_eval_losses=phase_eval_losses,
+                    per_probe=global_per_probe,
                     global_route=route.expression,
                 )
             )
@@ -1090,6 +1372,12 @@ def summarize_memory_bank(results: list[MemoryBankResult]) -> dict[str, dict[str
         "optimal_route_rate",
         "selected_loss_gap",
         "expected_loss_gap",
+        "probe_eval_loss",
+        "probe_route_accuracy",
+        "probe_ambiguous_rate",
+        "probe_optimal_route_rate",
+        "probe_selected_loss_gap",
+        "probe_expected_loss_gap",
         "frontier_score",
     ]
     summary: dict[str, dict[str, float]] = {}
@@ -1131,6 +1419,37 @@ def summarize_memory_bank(results: list[MemoryBankResult]) -> dict[str, dict[str
                 values[f"domain_{domain}_{metric}_std"] = (
                     statistics.stdev(metric_values) if len(metric_values) > 1 else 0.0
                 )
+        probes = sorted({probe for result in group for probe in result.get("per_probe", {})})
+        for probe in probes:
+            probe_group = [
+                result["per_probe"][probe]
+                for result in group
+                if probe in result.get("per_probe", {})
+            ]
+            selection_count = sum(
+                int(probe_result["selection_count"]) for probe_result in probe_group
+            )
+            for metric in [
+                "eval_loss",
+                "sequential_eval_loss",
+                "loss_delta_vs_sequential",
+                "route_accuracy",
+                "ambiguous_rate",
+                "optimal_route_rate",
+                "selected_loss_gap",
+                "expected_loss_gap",
+            ]:
+                if selection_count == 0:
+                    metric_values = [0.0]
+                else:
+                    metric_values = [
+                        float(probe_result.get(metric, 0.0))
+                        for probe_result in probe_group
+                    ]
+                values[f"probe_{probe}_{metric}_mean"] = statistics.fmean(metric_values)
+                values[f"probe_{probe}_{metric}_std"] = (
+                    statistics.stdev(metric_values) if len(metric_values) > 1 else 0.0
+                )
         summary[variant] = values
     return summary
 
@@ -1145,6 +1464,34 @@ def phase_paths_from_args(args: argparse.Namespace) -> list[str]:
     raise ValueError("provide --task-files or all of --task-a-file/--task-b-file/--task-c-file")
 
 
+def probes_from_args(args: argparse.Namespace, *, stable_phase: str) -> list[Probe]:
+    """Return eval-only probe specs from aligned CLI lists."""
+    if args.probe_files is None:
+        return []
+    if args.probe_routes is None:
+        raise ValueError("--probe-routes is required when --probe-files is provided")
+    if len(args.probe_files) != len(args.probe_routes):
+        raise ValueError("--probe-files and --probe-routes must have the same length")
+    probe_names = args.probe_names or [Path(path).stem for path in args.probe_files]
+    if len(probe_names) != len(args.probe_files):
+        raise ValueError("--probe-names must match --probe-files length")
+    if len(set(probe_names)) != len(probe_names):
+        raise ValueError("--probe-names must be unique")
+    return [
+        Probe(
+            name=name,
+            path=path,
+            expected_route=parse_route_expr(route, stable_phase=stable_phase).expression,
+        )
+        for name, path, route in zip(
+            probe_names,
+            args.probe_files,
+            args.probe_routes,
+            strict=True,
+        )
+    ]
+
+
 def parse_args() -> argparse.Namespace:
     """Parse CLI arguments for `stt-memory-bank`."""
     parser = argparse.ArgumentParser(description="Run contextual routed memory-bank LoRA tests.")
@@ -1155,6 +1502,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--task-a-file", default=None)
     parser.add_argument("--task-b-file", default=None)
     parser.add_argument("--task-c-file", default=None)
+    parser.add_argument("--probe-files", nargs="*", default=None)
+    parser.add_argument("--probe-names", nargs="*", default=None)
+    parser.add_argument("--probe-routes", nargs="*", default=None)
     parser.add_argument("--phase-steps", type=int, default=100)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--seeds", nargs="*", type=int, default=None)
@@ -1176,6 +1526,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-gossip-vectors", type=int, default=None)
     parser.add_argument("--target-modules", nargs="*", default=None)
     parser.add_argument("--route-expr", action="append", default=None)
+    parser.add_argument("--audit-route-expr", action="append", default=None)
     parser.add_argument("--contextual-route", action="store_true")
     parser.add_argument(
         "--route-selection",
@@ -1214,6 +1565,13 @@ def main() -> None:
         if args.route_expr is not None
         else default_route_exprs(phase_names)
     )
+    audit_route_exprs = (
+        parse_route_exprs(args.audit_route_expr, stable_phase=stable_phase)
+        if args.audit_route_expr is not None
+        else None
+    )
+    merged_audit_route_exprs = merge_route_exprs(route_exprs, audit_route_exprs)
+    probes = probes_from_args(args, stable_phase=stable_phase)
     settings = LoraSettings(
         model_name=args.model,
         max_length=args.max_length,
@@ -1237,6 +1595,7 @@ def main() -> None:
         max_gossip_vectors=args.max_gossip_vectors,
     )[0]
     phase_texts = [load_texts(path) for path in task_files]
+    probe_texts = [load_texts(probe.path) for probe in probes]
     seeds = args.seeds or [args.seed]
     results = [
         result
@@ -1252,6 +1611,9 @@ def main() -> None:
             route_exprs=route_exprs,
             route_selection=args.route_selection,
             contextual_route=args.contextual_route,
+            probes=probes,
+            probe_texts=probe_texts,
+            audit_route_exprs=audit_route_exprs,
             ambiguity_margin=args.ambiguity_margin,
             include_global_routes=args.global_route_baseline,
         )
@@ -1264,6 +1626,9 @@ def main() -> None:
             "device": args.device,
             "task_files": task_files,
             "phase_names": phase_names,
+            "probe_files": [probe.path for probe in probes],
+            "probe_names": [probe.name for probe in probes],
+            "probe_routes": [probe.expected_route for probe in probes],
             "phase_steps": args.phase_steps,
             "seeds": seeds,
             "max_length": args.max_length,
@@ -1281,6 +1646,7 @@ def main() -> None:
             "gossip_k": args.gossip_k,
             "max_gossip_vectors": args.max_gossip_vectors,
             "route_exprs": [route.expression for route in route_exprs],
+            "audit_route_exprs": [route.expression for route in merged_audit_route_exprs],
             "contextual_route": args.contextual_route,
             "route_selection": args.route_selection,
             "ambiguity_margin": args.ambiguity_margin,

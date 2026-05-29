@@ -1,3 +1,4 @@
+import argparse
 from typing import cast
 
 import torch
@@ -10,7 +11,9 @@ from stt.memory_bank import (
     aggregate_domain_metrics,
     compose_memory_route_state,
     expected_route_for_domain,
+    merge_route_exprs,
     parse_route_expr,
+    probes_from_args,
     route_expr_string,
     route_optimality_audit,
     route_variant_suffix,
@@ -25,6 +28,32 @@ def test_parse_route_expr_compiles_named_delta_scales() -> None:
     assert route.scales == {"B": 1.0, "C": 0.9, "D": 0.4}
     assert route_expr_string(route) == "A+B+0.9C+0.4D"
     assert route_variant_suffix(route) == "A_B_0p9C_0p4D"
+
+
+def test_merge_route_exprs_keeps_candidates_before_audit_routes() -> None:
+    routes = [parse_route_expr("A+B"), parse_route_expr("A+C")]
+    audit_routes = [parse_route_expr("A+0.5B+0.5C"), parse_route_expr("A+B")]
+
+    merged = merge_route_exprs(routes, audit_routes)
+
+    assert [route.expression for route in merged] == [
+        "A+B",
+        "A+C",
+        "A+0.5B+0.5C",
+    ]
+
+
+def test_probes_from_args_normalizes_expected_routes() -> None:
+    args = argparse.Namespace(
+        probe_files=["data/memory_probe_gamma_boundary.txt"],
+        probe_names=None,
+        probe_routes=["A+1.0*C"],
+    )
+
+    probes = probes_from_args(args, stable_phase="A")
+
+    assert probes[0].name == "memory_probe_gamma_boundary"
+    assert probes[0].expected_route == "A+C"
 
 
 def test_route_optimality_audit_reports_selected_and_expected_gaps(monkeypatch) -> None:
@@ -181,3 +210,56 @@ def test_summarize_memory_bank_reports_domains_and_wins() -> None:
     assert values["route_accuracy_mean"] == 1.0
     assert values["domain_A_eval_loss_mean"] == 1.0
     assert values["domain_A_learning_retained_mean"] == 0.83
+
+
+def test_summarize_memory_bank_reports_probe_metrics() -> None:
+    result = cast(MemoryBankResult, {
+        "variant": "gossip_contextual_memory_bank_calibration",
+        "heldout_report": True,
+        "contextual_eval_loss": 1.0,
+        "sequential_eval_loss": 1.5,
+        "loss_delta_vs_sequential": 0.5,
+        "mean_learning_retained": 0.9,
+        "mean_interference": 0.1,
+        "route_accuracy": 1.0,
+        "ambiguous_rate": 0.0,
+        "optimal_route_rate": 0.8,
+        "selected_loss_gap": 0.2,
+        "expected_loss_gap": 0.3,
+        "probe_eval_loss": 0.7,
+        "probe_route_accuracy": 1.0,
+        "probe_ambiguous_rate": 0.0,
+        "probe_optimal_route_rate": 1.0,
+        "probe_selected_loss_gap": 0.0,
+        "probe_expected_loss_gap": 0.0,
+        "frontier_score": 0.5,
+        "per_domain": {},
+        "per_probe": {
+            "gamma_boundary": {
+                "selected_route_counts": {"A+C": 2},
+                "expected_route": "A+C",
+                "most_selected_route": "A+C",
+                "selection_count": 2,
+                "route_accuracy": 1.0,
+                "ambiguous_count": 0,
+                "ambiguous_rate": 0.0,
+                "eval_loss": 0.7,
+                "sequential_eval_loss": 1.0,
+                "learned_eval_loss": 0.7,
+                "initial_eval_loss": 1.2,
+                "loss_delta_vs_sequential": 0.3,
+                "learning_retained": 1.0,
+                "interference": 0.0,
+                "optimal_route_rate": 1.0,
+                "selected_loss_gap": 0.0,
+                "expected_loss_gap": 0.0,
+            }
+        },
+    })
+
+    summary = summarize_memory_bank([result])
+
+    values = summary["gossip_contextual_memory_bank_calibration"]
+    assert values["probe_eval_loss_mean"] == 0.7
+    assert values["probe_route_accuracy_mean"] == 1.0
+    assert values["probe_gamma_boundary_eval_loss_mean"] == 0.7

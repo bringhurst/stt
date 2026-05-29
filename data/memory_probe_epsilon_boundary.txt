@@ -1,0 +1,8 @@
+Epsilon boundary probe asks which cache Project Epsilon mentions.
+Epsilon boundary probe answer should mention Aerospike only for Epsilon.
+Epsilon boundary probe asks whether SQLite WAL applies to Epsilon.
+Epsilon boundary probe answer should reject Gamma WAL details for Epsilon.
+Epsilon boundary probe asks whether reports need a risk paragraph.
+Epsilon boundary probe answer should require the Epsilon risk paragraph.
+Epsilon boundary probe asks which route should answer Epsilon prompts.
+Epsilon boundary probe expected semantic route is A+E.

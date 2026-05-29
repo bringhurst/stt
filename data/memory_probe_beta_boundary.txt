@@ -1,0 +1,8 @@
+Beta boundary probe asks which cache Project Beta uses for sharded keys.
+Beta boundary probe answer should mention Redis Cluster and Project Beta scope.
+Beta boundary probe asks whether Beta inherits Alpha monitoring.
+Beta boundary probe answer should preserve the shared control plane fact.
+Beta boundary probe asks if Gamma SQLite rules apply to Beta.
+Beta boundary probe answer should reject Gamma WAL details for Beta.
+Beta boundary probe asks which route should answer Beta cache questions.
+Beta boundary probe expected semantic route is A+B.

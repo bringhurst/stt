@@ -1,0 +1,8 @@
+Gamma boundary probe asks which cache Project Gamma allows.
+Gamma boundary probe answer should say SQLite WAL and forbid Redis.
+Gamma boundary probe asks whether Redis Cluster applies to Gamma.
+Gamma boundary probe answer should reject Beta cache details for Gamma.
+Gamma boundary probe asks whether Gamma uses the shared control plane.
+Gamma boundary probe answer should say single-node offline deployment.
+Gamma boundary probe asks which route should answer Gamma prompts.
+Gamma boundary probe expected semantic route is A+C.

@@ -1,0 +1,8 @@
+Ambiguous scope probe asks which project cache should be used without naming a project.
+Ambiguous scope probe answer should ask for the project before using conflict facts.
+Ambiguous scope probe asks whether Redis, SQLite WAL, or Aerospike is correct.
+Ambiguous scope probe answer should not blend Beta, Gamma, and Epsilon memories.
+Ambiguous scope probe asks for deployment mode without project scope.
+Ambiguous scope probe answer should request scope before citing control planes.
+Ambiguous scope probe asks which route should answer unscoped conflict prompts.
+Ambiguous scope probe expected semantic route is A.

@@ -56,6 +56,7 @@ HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 poetry run stt-memory-bank \
   --route-expr "A+C" \
   --route-expr "A+D" \
   --route-expr "A+E" \
+  --audit-route-expr "A+0.9B+0.4C+0.4D+0.4E" \
   --contextual-route \
   --route-selection loss_probe \
   --seeds 0 1 2 3 4 5 \
@@ -71,13 +72,36 @@ Route-selection modes:
 `--ambiguity-margin` marks a prompt as `uncertain` when the top two loss-probe routes are too close.
 The run still reports the best route loss for comparability, while route counts expose uncertainty.
 
+`--route-expr` defines the contextual router candidates. `--audit-route-expr` adds broader routes for
+optimality audits and `--global-route-baseline` without letting those routes become contextual candidates.
+This keeps clean semantic route labels such as `A+C` separate from scalar compromise audit routes such as
+`A+0.9B+0.4C+0.4D+0.4E`.
+
+Eval-only boundary probes can be added with aligned probe lists:
+
+```bash
+--probe-files \
+  data/memory_probe_beta_boundary.txt \
+  data/memory_probe_gamma_boundary.txt \
+  data/memory_probe_epsilon_boundary.txt \
+  data/memory_probe_ambiguous_scope.txt \
+--probe-names beta_boundary gamma_boundary epsilon_boundary ambiguous_scope \
+--probe-routes "A+B" "A+C" "A+E" "A"
+```
+
+The probes are never used for phase training. In `calibration` mode, each probe corpus is split into
+selection and held-out report halves, matching the domain calibration flow.
+
 ## Output
 
 Each seed emits:
 
 - `candidate_routes`: route expressions evaluated by the router.
+- `audit_routes`: candidate routes plus any extra routes used only for audits/global baselines.
 - `per_domain`: selected route counts, expected route, route accuracy, eval loss, retention, and interference.
+- `per_probe`: eval-only boundary probe route counts and optimality audit metrics, when probes are provided.
 - `route_accuracy`: weighted route accuracy across prompt domains.
+- `probe_route_accuracy`: weighted route accuracy across eval-only probes.
 - `ambiguous_rate`: weighted uncertainty rate.
 - `frontier_score`: `sequential_eval_loss - contextual_eval_loss`.
 
@@ -101,6 +125,19 @@ Sequential LoRA deltas can be stored as a memory bank and composed per prompt.
 
 The first target comparison is whether contextual routing retains more C/D/E learning than fixed scalar
 sleep without increasing A/B interference.
+
+Boundary probe claims should use `calibration` selection, not `loss_probe`, when claiming non-oracle
+held-out behavior. `loss_probe` remains useful as a diagnostic because it reads the reported examples
+while selecting a route.
+
+The current boundary probe fixtures are intentionally scoped:
+
+| Probe file | Expected route | Purpose |
+| --- | --- | --- |
+| `data/memory_probe_beta_boundary.txt` | `A+B` | Related Beta cache facts should not activate Gamma/Epsilon conflicts. |
+| `data/memory_probe_gamma_boundary.txt` | `A+C` | Gamma SQLite-WAL conflict should suppress Redis/Beta facts. |
+| `data/memory_probe_epsilon_boundary.txt` | `A+E` | Epsilon Aerospike/risk facts should stay scoped to Epsilon. |
+| `data/memory_probe_ambiguous_scope.txt` | `A` | Unscoped conflict prompts should prefer stable memory/clarification over a conflict route. |
 
 ## First Qwen A/B/C/D/E Runs
 

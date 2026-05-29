@@ -507,6 +507,11 @@ def test_analyze_memory_bank_record_reports_route_choices() -> None:
                 "frontier_score_mean": 0.4,
                 "route_accuracy_mean": 1.0,
                 "ambiguous_rate_mean": 0.0,
+                "probe_eval_loss_mean": 0.8,
+                "probe_route_accuracy_mean": 1.0,
+                "probe_optimal_route_rate_mean": 1.0,
+                "probe_selected_loss_gap_mean": 0.0,
+                "probe_expected_loss_gap_mean": 0.0,
                 "contextual_win_count": 1.0,
             }
         },
@@ -525,6 +530,21 @@ def test_analyze_memory_bank_record_reports_route_choices() -> None:
                         "interference": 0.1,
                     }
                 },
+                "per_probe": {
+                    "gamma_boundary": {
+                        "selected_route_counts": {"A+C": 2},
+                        "expected_route": "A+C",
+                        "selection_count": 2,
+                        "route_accuracy": 1.0,
+                        "eval_loss": 0.8,
+                        "best_eval_loss": 0.8,
+                        "optimal_route_rate": 1.0,
+                        "selected_loss_gap": 0.0,
+                        "expected_loss_gap": 0.0,
+                        "ambiguous_rate": 0.0,
+                        "best_route_counts": {"A+C": 2},
+                    }
+                },
             }
         ],
     }
@@ -537,6 +557,10 @@ def test_analyze_memory_bank_record_reports_route_choices() -> None:
     )
     assert any("gossip_contextual_memory_bank_loss_probe loss_probe" in line for line in lines)
     assert any("gossip_contextual_memory_bank_loss_probe A A+B none 2" in line for line in lines)
+    assert any(
+        "gossip_contextual_memory_bank_loss_probe gamma_boundary A+C A+C A+C 2" in line
+        for line in lines
+    )
 
 
 def test_aggregate_memory_bank_records_reports_conditions() -> None:
@@ -549,6 +573,11 @@ def test_aggregate_memory_bank_records_reports_conditions() -> None:
             "frontier_score_mean": 0.4,
             "route_accuracy_mean": 1.0,
             "ambiguous_rate_mean": 0.0,
+            "probe_eval_loss_mean": 0.8,
+            "probe_route_accuracy_mean": 1.0,
+            "probe_optimal_route_rate_mean": 1.0,
+            "probe_selected_loss_gap_mean": 0.0,
+            "probe_expected_loss_gap_mean": 0.0,
             "contextual_win_count": 1.0,
         }
     }
@@ -564,6 +593,21 @@ def test_aggregate_memory_bank_records_reports_conditions() -> None:
                 "sequential_eval_loss": 1.4,
                 "learning_retained": 0.9,
                 "interference": 0.1,
+            }
+        },
+        "per_probe": {
+            "gamma_boundary": {
+                "selected_route_counts": {"A+C": 1},
+                "expected_route": "A+C",
+                "selection_count": 1,
+                "route_accuracy": 1.0,
+                "eval_loss": 0.8,
+                "best_eval_loss": 0.8,
+                "optimal_route_rate": 1.0,
+                "selected_loss_gap": 0.0,
+                "expected_loss_gap": 0.0,
+                "ambiguous_rate": 0.0,
+                "best_route_counts": {"A+C": 1},
             }
         },
     }
@@ -584,3 +628,4 @@ def test_aggregate_memory_bank_records_reports_conditions() -> None:
     assert any(line.startswith("memory_task_b_related gossip_contextual") for line in lines)
     assert any(line.startswith("memory_task_c_conflict gossip_contextual") for line in lines)
     assert any("B A+B none 1" in line for line in lines)
+    assert any("gamma_boundary A+C A+C A+C 1" in line for line in lines)
