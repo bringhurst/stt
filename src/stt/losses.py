@@ -82,6 +82,62 @@ def sparse_activation_loss(hidden: Tensor) -> Tensor:
     return hidden.abs().mean()
 
 
+def branch_output_repulsion_loss(branch_outputs: Tensor) -> Tensor:
+    """Penalize redundant compartment branch outputs.
+
+    Args:
+        branch_outputs: Tensor shaped `(..., branches, dim)`.
+
+    Returns:
+        Mean off-diagonal cosine similarity between branches at each token/layer.
+    """
+    if branch_outputs.ndim < 3:
+        raise ValueError("branch_outputs must have shape (..., branches, dim)")
+    branches = branch_outputs.shape[-2]
+    if branches < 2:
+        return branch_outputs.new_zeros(())
+
+    vectors = branch_outputs.reshape(-1, branches, branch_outputs.shape[-1])
+    vectors = torch.nn.functional.normalize(vectors, dim=-1, eps=1e-8)
+    similarity = torch.matmul(vectors, vectors.transpose(-1, -2))
+    mask = ~torch.eye(branches, dtype=torch.bool, device=branch_outputs.device)
+    return similarity[:, mask].mean()
+
+
+def branch_load_balance_loss(branch_gates: Tensor) -> Tensor:
+    """Encourage average routed traffic to use all compartments."""
+    if branch_gates.ndim < 2:
+        raise ValueError("branch_gates must have shape (..., branches)")
+    branches = branch_gates.shape[-1]
+    if branches < 2:
+        return branch_gates.new_zeros(())
+
+    usage = branch_gates.float().mean(dim=tuple(range(branch_gates.ndim - 1)))
+    target = usage.new_full((branches,), 1.0 / branches)
+    return (usage - target).pow(2).mean() * branches
+
+
+def branch_inhibition_loss(branch_outputs: Tensor, branch_gates: Tensor) -> Tensor:
+    """Penalize positively correlated branches when they are co-active."""
+    if branch_outputs.ndim < 3:
+        raise ValueError("branch_outputs must have shape (..., branches, dim)")
+    if branch_gates.shape != branch_outputs.shape[:-1]:
+        raise ValueError("branch_gates must align with branch_outputs without dim")
+    branches = branch_outputs.shape[-2]
+    if branches < 2:
+        return branch_outputs.new_zeros(())
+
+    outputs = branch_outputs.reshape(-1, branches, branch_outputs.shape[-1])
+    gates = branch_gates.reshape(-1, branches).float()
+    outputs = torch.nn.functional.normalize(outputs, dim=-1, eps=1e-8)
+    similarity = torch.matmul(outputs, outputs.transpose(-1, -2))
+    coactivity = gates.unsqueeze(-1) * gates.unsqueeze(-2)
+    mask = ~torch.eye(branches, dtype=torch.bool, device=branch_outputs.device)
+    weighted_overlap = torch.relu(similarity[:, mask]) * coactivity[:, mask]
+    weight_total = coactivity[:, mask].sum().clamp_min(1.0)
+    return weighted_overlap.sum() / weight_total
+
+
 def sample_token_vectors(
     hidden: Tensor,
     attention_mask: Tensor | None = None,

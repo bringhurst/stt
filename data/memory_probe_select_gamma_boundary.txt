@@ -1,0 +1,8 @@
+Gamma selector example asks which scoped route should answer Project Gamma cache prompts.
+Gamma selector answer should choose route A+C for Project Gamma.
+Gamma selector asks whether Redis Cluster is allowed for Gamma.
+Gamma selector answer should reject Redis Cluster for Gamma.
+Gamma selector asks which storage detail Gamma requires.
+Gamma selector answer should say SQLite WAL is the Gamma cache detail.
+Gamma selector asks whether Beta or Epsilon facts should leak into Gamma.
+Gamma selector answer should keep Beta Redis and Epsilon Aerospike out of Gamma.

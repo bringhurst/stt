@@ -456,6 +456,8 @@ def memory_bank_selection(record: dict[str, Any], variant_name: str) -> str:
             selection = str(result.get("route_selection", "unknown"))
             if selection == "global" and result.get("global_route") is not None:
                 return f"global:{result['global_route']}"
+            if result.get("residual_contextual_route"):
+                return f"residual:{selection}"
             return selection
     return "unknown"
 
@@ -467,8 +469,13 @@ def analyze_memory_bank_record(record: dict[str, Any]) -> list[str]:
     lines = [
         f"memory_bank_record phases={','.join(phase_names)} variants={','.join(sorted(summary))}",
         "variant selection eval_loss sequential_eval_loss loss_delta frontier_score "
-        "route_accuracy optimal_rate selected_gap expected_gap ambiguous_rate "
-        "probe_eval_loss probe_accuracy probe_optimal_rate probe_selected_gap probe_expected_gap",
+        "route_accuracy optimal_rate selected_top_k expected_top_k top_k_gap "
+        "top_k_boundary selected_gap expected_gap ambiguous_rate abstention_rate low_margin "
+        "false_confident route_margin route_entropy probe_eval_loss probe_accuracy "
+        "probe_optimal_rate probe_selected_top_k probe_expected_top_k probe_top_k_gap "
+        "probe_top_k_boundary probe_selected_gap probe_expected_gap probe_abstention "
+        "probe_low_margin probe_false_confident residual_candidates residual_selected_gap "
+        "residual_optimal_rate residual_route_margin",
     ]
     for variant_name, values in sorted(summary.items()):
         lines.append(
@@ -479,15 +486,36 @@ def analyze_memory_bank_record(record: dict[str, Any]) -> list[str]:
             f"{format_optional_float(values.get('frontier_score_mean'))} "
             f"{format_optional_float(values.get('route_accuracy_mean'))} "
             f"{format_optional_float(values.get('optimal_route_rate_mean'))} "
+            f"{format_optional_float(values.get('selected_top_k_rate_mean'))} "
+            f"{format_optional_float(values.get('expected_top_k_rate_mean'))} "
+            f"{format_optional_float(values.get('top_k_loss_gap_mean'))} "
+            f"{format_optional_float(values.get('top_k_boundary_margin_mean'))} "
             f"{format_optional_float(values.get('selected_loss_gap_mean'))} "
             f"{format_optional_float(values.get('expected_loss_gap_mean'))} "
             f"{format_optional_float(values.get('ambiguous_rate_mean'))} "
+            f"{format_optional_float(values.get('abstention_rate_mean'))} "
+            f"{format_optional_float(values.get('low_margin_rate_mean'))} "
+            f"{format_optional_float(values.get('false_confident_route_rate_mean'))} "
+            f"{format_optional_float(values.get('route_margin_mean'))} "
+            f"{format_optional_float(values.get('route_entropy_mean'))} "
             f"{format_optional_float(values.get('probe_eval_loss_mean'))} "
             f"{format_optional_float(values.get('probe_route_accuracy_mean'))} "
             f"{format_optional_float(values.get('probe_optimal_route_rate_mean'))} "
+            f"{format_optional_float(values.get('probe_selected_top_k_rate_mean'))} "
+            f"{format_optional_float(values.get('probe_expected_top_k_rate_mean'))} "
+            f"{format_optional_float(values.get('probe_top_k_loss_gap_mean'))} "
+            f"{format_optional_float(values.get('probe_top_k_boundary_margin_mean'))} "
             f"{format_optional_float(values.get('probe_selected_loss_gap_mean'))} "
-            f"{format_optional_float(values.get('probe_expected_loss_gap_mean'))}"
+            f"{format_optional_float(values.get('probe_expected_loss_gap_mean'))} "
+            f"{format_optional_float(values.get('probe_abstention_rate_mean'))} "
+            f"{format_optional_float(values.get('probe_low_margin_rate_mean'))} "
+            f"{format_optional_float(values.get('probe_false_confident_route_rate_mean'))} "
+            f"{format_optional_float(values.get('residual_candidate_count_mean'))} "
+            f"{format_optional_float(values.get('residual_selected_gap_mean'))} "
+            f"{format_optional_float(values.get('residual_optimal_rate_mean'))} "
+            f"{format_optional_float(values.get('residual_route_margin_mean'))}"
         )
+        lines.extend(memory_bank_residual_lines(record, variant_name))
         lines.extend(memory_bank_win_count_lines(variant_name, values))
         lines.extend(memory_bank_domain_lines(record, variant_name))
         lines.extend(memory_bank_probe_lines(record, variant_name))
@@ -506,6 +534,33 @@ def memory_bank_win_count_lines(variant_name: str, values: dict[str, float]) -> 
     ]
 
 
+def memory_bank_residual_lines(record: dict[str, Any], variant_name: str) -> list[str]:
+    """Return residual routing configuration rows for one variant."""
+    results = [
+        result for result in record.get("results", []) if result.get("variant") == variant_name
+    ]
+    residual_results = [result for result in results if result.get("residual_contextual_route")]
+    if not residual_results:
+        return []
+    first = residual_results[0]
+    return [
+        "",
+        f"residual_route variant={variant_name} "
+        f"base={first.get('residual_route_base_expr', 'none')} "
+        f"mode={first.get('residual_route_mode', 'none')} "
+        f"grid={first.get('residual_route_grid', [])} "
+        f"phases={','.join(first.get('residual_route_phases', []))} "
+        f"candidates={first.get('residual_candidate_count', 0)}",
+    ]
+
+
+def format_residual(value: Any) -> str:
+    """Format residual route metadata compactly for analyzer rows."""
+    if not isinstance(value, dict) or not value:
+        return "none"
+    return ",".join(f"{name}:{float(offset):+.2f}" for name, offset in sorted(value.items()))
+
+
 def memory_bank_domain_lines(record: dict[str, Any], variant_name: str) -> list[str]:
     """Return route-choice rows aggregated by prompt domain."""
     results = [
@@ -518,7 +573,9 @@ def memory_bank_domain_lines(record: dict[str, Any], variant_name: str) -> list[
     lines = [
         "",
         "variant domain most_selected_route best_route selection_count accuracy optimal_rate "
-        "eval_loss best_eval_loss selected_gap expected_gap learning_retained interference",
+        "selected_top_k expected_top_k top_k_gap top_k_boundary eval_loss best_eval_loss "
+        "selected_gap expected_gap rank margin entropy low_margin abstention false_confident "
+        "selected_residual best_residual learning_retained interference",
     ]
     for domain in domains:
         domain_results = [
@@ -552,6 +609,26 @@ def memory_bank_domain_lines(record: dict[str, Any], variant_name: str) -> list[
             selection_count,
             "optimal_route_rate",
         )
+        selected_top_k = weighted_memory_domain_metric(
+            domain_results,
+            selection_count,
+            "selected_top_k_rate",
+        )
+        expected_top_k = weighted_memory_domain_metric(
+            domain_results,
+            selection_count,
+            "expected_top_k_rate",
+        )
+        top_k_gap = weighted_memory_domain_metric(
+            domain_results,
+            selection_count,
+            "top_k_loss_gap",
+        )
+        top_k_boundary = weighted_memory_domain_metric(
+            domain_results,
+            selection_count,
+            "top_k_boundary_margin",
+        )
         eval_loss_value = weighted_memory_domain_metric(
             domain_results,
             selection_count,
@@ -572,6 +649,36 @@ def memory_bank_domain_lines(record: dict[str, Any], variant_name: str) -> list[
             selection_count,
             "expected_loss_gap",
         )
+        rank = weighted_memory_domain_metric(
+            domain_results,
+            selection_count,
+            "selected_route_rank",
+        )
+        margin = weighted_memory_domain_metric(
+            domain_results,
+            selection_count,
+            "route_margin",
+        )
+        entropy = weighted_memory_domain_metric(
+            domain_results,
+            selection_count,
+            "route_entropy",
+        )
+        low_margin = weighted_memory_domain_metric(
+            domain_results,
+            selection_count,
+            "low_margin_rate",
+        )
+        abstention = weighted_memory_domain_metric(
+            domain_results,
+            selection_count,
+            "abstention_rate",
+        )
+        false_confident = weighted_memory_domain_metric(
+            domain_results,
+            selection_count,
+            "false_confident_route_rate",
+        )
         learning_retained = weighted_memory_domain_metric(
             domain_results,
             selection_count,
@@ -585,8 +692,14 @@ def memory_bank_domain_lines(record: dict[str, Any], variant_name: str) -> list[
 
         lines.append(
             f"{variant_name} {domain} {most_selected} {best_route} {selection_count} "
-            f"{accuracy:+.4f} {optimal_rate:+.4f} {eval_loss_value:+.4f} "
+            f"{accuracy:+.4f} {optimal_rate:+.4f} {selected_top_k:+.4f} "
+            f"{expected_top_k:+.4f} {top_k_gap:+.4f} {top_k_boundary:+.4f} "
+            f"{eval_loss_value:+.4f} "
             f"{best_eval_loss:+.4f} {selected_gap:+.4f} {expected_gap:+.4f} "
+            f"{rank:+.4f} {margin:+.4f} {entropy:+.4f} {low_margin:+.4f} "
+            f"{abstention:+.4f} {false_confident:+.4f} "
+            f"{format_residual(domain_results[0].get('selected_residual'))} "
+            f"{format_residual(domain_results[0].get('best_residual'))} "
             f"{learning_retained:+.4f} {interference:+.4f}"
         )
     return lines
@@ -604,7 +717,9 @@ def memory_bank_probe_lines(record: dict[str, Any], variant_name: str) -> list[s
     lines = [
         "",
         "variant probe expected_route most_selected_route best_route selection_count accuracy "
-        "optimal_rate eval_loss best_eval_loss selected_gap expected_gap ambiguous_rate",
+        "optimal_rate selected_top_k expected_top_k top_k_gap top_k_boundary eval_loss "
+        "best_eval_loss selected_gap expected_gap rank margin entropy low_margin abstention "
+        "false_confident selected_residual best_residual ambiguous_rate",
     ]
     for probe in probes:
         probe_results = [
@@ -639,6 +754,26 @@ def memory_bank_probe_lines(record: dict[str, Any], variant_name: str) -> list[s
             selection_count,
             "optimal_route_rate",
         )
+        selected_top_k = weighted_memory_domain_metric(
+            probe_results,
+            selection_count,
+            "selected_top_k_rate",
+        )
+        expected_top_k = weighted_memory_domain_metric(
+            probe_results,
+            selection_count,
+            "expected_top_k_rate",
+        )
+        top_k_gap = weighted_memory_domain_metric(
+            probe_results,
+            selection_count,
+            "top_k_loss_gap",
+        )
+        top_k_boundary = weighted_memory_domain_metric(
+            probe_results,
+            selection_count,
+            "top_k_boundary_margin",
+        )
         eval_loss_value = weighted_memory_domain_metric(
             probe_results,
             selection_count,
@@ -659,6 +794,36 @@ def memory_bank_probe_lines(record: dict[str, Any], variant_name: str) -> list[s
             selection_count,
             "expected_loss_gap",
         )
+        rank = weighted_memory_domain_metric(
+            probe_results,
+            selection_count,
+            "selected_route_rank",
+        )
+        margin = weighted_memory_domain_metric(
+            probe_results,
+            selection_count,
+            "route_margin",
+        )
+        entropy = weighted_memory_domain_metric(
+            probe_results,
+            selection_count,
+            "route_entropy",
+        )
+        low_margin = weighted_memory_domain_metric(
+            probe_results,
+            selection_count,
+            "low_margin_rate",
+        )
+        abstention = weighted_memory_domain_metric(
+            probe_results,
+            selection_count,
+            "abstention_rate",
+        )
+        false_confident = weighted_memory_domain_metric(
+            probe_results,
+            selection_count,
+            "false_confident_route_rate",
+        )
         ambiguous_rate = weighted_memory_domain_metric(
             probe_results,
             selection_count,
@@ -668,8 +833,14 @@ def memory_bank_probe_lines(record: dict[str, Any], variant_name: str) -> list[s
         lines.append(
             f"{variant_name} {probe} {expected_route} {most_selected} {best_route} "
             f"{selection_count} {accuracy:+.4f} {optimal_rate:+.4f} "
-            f"{eval_loss_value:+.4f} {best_eval_loss:+.4f} {selected_gap:+.4f} "
-            f"{expected_gap:+.4f} {ambiguous_rate:+.4f}"
+            f"{selected_top_k:+.4f} {expected_top_k:+.4f} {top_k_gap:+.4f} "
+            f"{top_k_boundary:+.4f} {eval_loss_value:+.4f} "
+            f"{best_eval_loss:+.4f} {selected_gap:+.4f} "
+            f"{expected_gap:+.4f} {rank:+.4f} {margin:+.4f} {entropy:+.4f} "
+            f"{low_margin:+.4f} {abstention:+.4f} {false_confident:+.4f} "
+            f"{format_residual(probe_results[0].get('selected_residual'))} "
+            f"{format_residual(probe_results[0].get('best_residual'))} "
+            f"{ambiguous_rate:+.4f}"
         )
     return lines
 
@@ -1054,8 +1225,13 @@ def aggregate_memory_bank_records(records: list[dict[str, Any]]) -> list[str]:
     lines = [
         f"combined_memory_bank_records={len(records)}",
         "condition variant selection eval_loss sequential_eval_loss loss_delta "
-        "frontier_score route_accuracy optimal_rate selected_gap expected_gap ambiguous_rate "
-        "probe_eval_loss probe_accuracy probe_optimal_rate probe_selected_gap probe_expected_gap",
+        "frontier_score route_accuracy optimal_rate selected_top_k expected_top_k top_k_gap "
+        "top_k_boundary selected_gap expected_gap ambiguous_rate abstention_rate low_margin "
+        "false_confident route_margin route_entropy probe_eval_loss probe_accuracy "
+        "probe_optimal_rate probe_selected_top_k probe_expected_top_k probe_top_k_gap "
+        "probe_top_k_boundary probe_selected_gap probe_expected_gap probe_abstention "
+        "probe_low_margin probe_false_confident residual_candidates residual_selected_gap "
+        "residual_optimal_rate residual_route_margin",
     ]
     for record in records:
         condition = record_condition(record)
@@ -1069,15 +1245,38 @@ def aggregate_memory_bank_records(records: list[dict[str, Any]]) -> list[str]:
                 f"{format_optional_float(values.get('frontier_score_mean'))} "
                 f"{format_optional_float(values.get('route_accuracy_mean'))} "
                 f"{format_optional_float(values.get('optimal_route_rate_mean'))} "
+                f"{format_optional_float(values.get('selected_top_k_rate_mean'))} "
+                f"{format_optional_float(values.get('expected_top_k_rate_mean'))} "
+                f"{format_optional_float(values.get('top_k_loss_gap_mean'))} "
+                f"{format_optional_float(values.get('top_k_boundary_margin_mean'))} "
                 f"{format_optional_float(values.get('selected_loss_gap_mean'))} "
                 f"{format_optional_float(values.get('expected_loss_gap_mean'))} "
                 f"{format_optional_float(values.get('ambiguous_rate_mean'))} "
+                f"{format_optional_float(values.get('abstention_rate_mean'))} "
+                f"{format_optional_float(values.get('low_margin_rate_mean'))} "
+                f"{format_optional_float(values.get('false_confident_route_rate_mean'))} "
+                f"{format_optional_float(values.get('route_margin_mean'))} "
+                f"{format_optional_float(values.get('route_entropy_mean'))} "
                 f"{format_optional_float(values.get('probe_eval_loss_mean'))} "
                 f"{format_optional_float(values.get('probe_route_accuracy_mean'))} "
                 f"{format_optional_float(values.get('probe_optimal_route_rate_mean'))} "
+                f"{format_optional_float(values.get('probe_selected_top_k_rate_mean'))} "
+                f"{format_optional_float(values.get('probe_expected_top_k_rate_mean'))} "
+                f"{format_optional_float(values.get('probe_top_k_loss_gap_mean'))} "
+                f"{format_optional_float(values.get('probe_top_k_boundary_margin_mean'))} "
                 f"{format_optional_float(values.get('probe_selected_loss_gap_mean'))} "
-                f"{format_optional_float(values.get('probe_expected_loss_gap_mean'))}"
+                f"{format_optional_float(values.get('probe_expected_loss_gap_mean'))} "
+                f"{format_optional_float(values.get('probe_abstention_rate_mean'))} "
+                f"{format_optional_float(values.get('probe_low_margin_rate_mean'))} "
+                f"{format_optional_float(values.get('probe_false_confident_route_rate_mean'))} "
+                f"{format_optional_float(values.get('residual_candidate_count_mean'))} "
+                f"{format_optional_float(values.get('residual_selected_gap_mean'))} "
+                f"{format_optional_float(values.get('residual_optimal_rate_mean'))} "
+                f"{format_optional_float(values.get('residual_route_margin_mean'))}"
             )
+            for residual_line in memory_bank_residual_lines(record, variant_name):
+                if residual_line:
+                    lines.append(f"{condition} {residual_line}")
             for win_line in memory_bank_win_count_lines(variant_name, values):
                 if win_line:
                     lines.append(f"{condition} {win_line}")

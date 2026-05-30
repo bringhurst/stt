@@ -1,0 +1,8 @@
+Beta selector example asks which scoped route should answer Project Beta cache prompts.
+Beta selector answer should choose route A+B for Project Beta.
+Beta selector asks whether Redis Cluster belongs to Gamma or Epsilon.
+Beta selector answer should say Redis Cluster is scoped to Beta only.
+Beta selector asks if SQLite WAL should override Beta cache facts.
+Beta selector answer should reject SQLite WAL for Beta.
+Beta selector asks whether Aerospike should appear in Beta answers.
+Beta selector answer should reject Aerospike for Beta.

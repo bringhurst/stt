@@ -8,7 +8,9 @@ small memory bank, then composes route expressions per prompt/domain.
 from __future__ import annotations
 
 import argparse
+import itertools
 import json
+import math
 import re
 import statistics
 from dataclasses import dataclass, replace
@@ -30,6 +32,7 @@ from stt.lora_experiment import (
     load_texts,
     load_tokenizer,
     parameter_counts,
+    split_corpus,
     write_run_record,
 )
 from stt.oracle_compose import (
@@ -40,7 +43,9 @@ from stt.oracle_compose import (
     subtract_state,
 )
 
-RouteSelection = Literal["oracle", "loss_probe", "calibration"]
+RouteSelection = Literal["oracle", "loss_probe", "calibration", "distilled", "micro_probe"]
+ResidualRouteMode = Literal["full", "axis", "pairs"]
+DistilledSelectorMethod = Literal["centroid", "knn"]
 
 ROUTE_TERM_RE = re.compile(
     r"^\s*(?:(?P<scale>[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)\*?)?"
@@ -102,6 +107,30 @@ class RouteChoice:
     eval_route: str
     loss: float
     ambiguous: bool
+    abstained: bool
+
+
+@dataclass(frozen=True)
+class DistilledRouteSelector:
+    """Cheap token selector distilled from loss-probe route labels."""
+
+    method: DistilledSelectorMethod
+    centroids: dict[str, dict[int, float]]
+    example_vectors: list[dict[int, float]]
+    example_routes: list[str]
+    route_counts: dict[str, int]
+    default_route: str
+    selector_margin: float
+    knn_k: int
+
+
+@dataclass(frozen=True)
+class ResidualRouteCandidate:
+    """One residual deformation of a base sleep route."""
+
+    route: RouteExpression
+    base_route_expr: str
+    residual: dict[str, float]
 
 
 class DomainRouteResult(TypedDict):
@@ -114,6 +143,8 @@ class DomainRouteResult(TypedDict):
     route_accuracy: float
     ambiguous_count: int
     ambiguous_rate: float
+    abstained_count: NotRequired[int]
+    abstention_rate: NotRequired[float]
     eval_loss: float
     sequential_eval_loss: float
     learned_eval_loss: float
@@ -125,10 +156,29 @@ class DomainRouteResult(TypedDict):
     most_best_route: NotRequired[str]
     best_eval_loss: NotRequired[float]
     selected_loss_gap: NotRequired[float]
+    selected_route_rank: NotRequired[float]
+    selected_top_k_count: NotRequired[int]
+    selected_top_k_rate: NotRequired[float]
+    expected_top_k_count: NotRequired[int]
+    expected_top_k_rate: NotRequired[float]
+    top_k_loss_gap: NotRequired[float]
+    top_k_boundary_margin: NotRequired[float]
+    top_k_route_counts: NotRequired[dict[str, int]]
+    route_margin: NotRequired[float]
+    route_entropy: NotRequired[float]
+    low_margin_count: NotRequired[int]
+    low_margin_rate: NotRequired[float]
+    ambiguity_abstention_rate: NotRequired[float]
+    false_confident_route_rate: NotRequired[float]
     expected_route_loss: NotRequired[float]
     expected_loss_gap: NotRequired[float]
     optimal_route_count: NotRequired[int]
     optimal_route_rate: NotRequired[float]
+    selected_route_expr: NotRequired[str]
+    selected_residual: NotRequired[dict[str, float]]
+    best_route_expr: NotRequired[str]
+    best_residual: NotRequired[dict[str, float]]
+    residual_gap: NotRequired[float]
 
 
 class MemoryBankResult(TypedDict):
@@ -148,6 +198,20 @@ class MemoryBankResult(TypedDict):
     route_selection: str
     contextual_route: bool
     global_route: NotRequired[str]
+    residual_contextual_route: NotRequired[bool]
+    residual_route_base_expr: NotRequired[str]
+    residual_route_grid: NotRequired[list[float]]
+    residual_route_mode: NotRequired[str]
+    residual_route_phases: NotRequired[list[str]]
+    residual_candidate_count: NotRequired[int]
+    route_top_k: NotRequired[int]
+    distilled_selector_method: NotRequired[str]
+    distilled_selector_margin: NotRequired[float]
+    distilled_knn_k: NotRequired[int]
+    micro_probe_prefix_words: NotRequired[int]
+    micro_probe_max_length: NotRequired[int]
+    micro_probe_template: NotRequired[str]
+    micro_probe_margin: NotRequired[float]
     phase_names: list[str]
     candidate_routes: list[str]
     audit_routes: NotRequired[list[str]]
@@ -164,13 +228,36 @@ class MemoryBankResult(TypedDict):
     ambiguous_rate: float
     optimal_route_rate: NotRequired[float]
     selected_loss_gap: NotRequired[float]
+    selected_route_rank: NotRequired[float]
+    selected_top_k_rate: NotRequired[float]
+    expected_top_k_rate: NotRequired[float]
+    top_k_loss_gap: NotRequired[float]
+    top_k_boundary_margin: NotRequired[float]
+    route_margin: NotRequired[float]
+    route_entropy: NotRequired[float]
+    abstention_rate: NotRequired[float]
+    low_margin_rate: NotRequired[float]
+    ambiguity_abstention_rate: NotRequired[float]
+    false_confident_route_rate: NotRequired[float]
+    residual_selected_gap: NotRequired[float]
+    residual_optimal_rate: NotRequired[float]
+    residual_route_margin: NotRequired[float]
+    residual_route_entropy: NotRequired[float]
     expected_loss_gap: NotRequired[float]
     probe_eval_loss: NotRequired[float]
     probe_route_accuracy: NotRequired[float]
     probe_ambiguous_rate: NotRequired[float]
     probe_optimal_route_rate: NotRequired[float]
     probe_selected_loss_gap: NotRequired[float]
+    probe_selected_top_k_rate: NotRequired[float]
+    probe_expected_top_k_rate: NotRequired[float]
+    probe_top_k_loss_gap: NotRequired[float]
+    probe_top_k_boundary_margin: NotRequired[float]
     probe_expected_loss_gap: NotRequired[float]
+    probe_abstention_rate: NotRequired[float]
+    probe_low_margin_rate: NotRequired[float]
+    probe_ambiguity_abstention_rate: NotRequired[float]
+    probe_false_confident_route_rate: NotRequired[float]
     frontier_score: float
     per_domain: dict[str, DomainRouteResult]
     per_probe: NotRequired[dict[str, DomainRouteResult]]
@@ -240,6 +327,114 @@ def merge_route_exprs(
     return list(merged.values())
 
 
+def clamp_scale(value: float, *, min_scale: float, max_scale: float) -> float:
+    """Clamp a route scale into the configured residual coefficient range."""
+    return min(max(value, min_scale), max_scale)
+
+
+def route_expr_from_scales(
+    *,
+    stable_phase: str,
+    scales: dict[str, float],
+    phase_order: list[str] | None = None,
+) -> RouteExpression:
+    """Build a normalized route expression from named non-stable scales."""
+    ordered = phase_order or list(scales)
+    parts = [stable_phase]
+    emitted = set()
+    for phase in ordered:
+        if phase == stable_phase or phase not in scales:
+            continue
+        scale = scales[phase]
+        if scale == 0.0:
+            continue
+        parts.append(phase if scale == 1.0 else f"{scale:g}{phase}")
+        emitted.add(phase)
+    for phase, scale in scales.items():
+        if phase in emitted or phase == stable_phase or scale == 0.0:
+            continue
+        parts.append(phase if scale == 1.0 else f"{scale:g}{phase}")
+    return parse_route_expr("+".join(parts), stable_phase=stable_phase)
+
+
+def residual_offsets(
+    phases: list[str],
+    grid: list[float],
+    mode: ResidualRouteMode,
+) -> list[dict[str, float]]:
+    """Return residual offset dictionaries for full, axis, or pair mode."""
+    if not phases:
+        return [{}]
+    if not grid:
+        raise ValueError("residual route grid must include at least one value")
+
+    zero = {phase: 0.0 for phase in phases}
+    if mode == "full":
+        return [
+            dict(zip(phases, values, strict=True))
+            for values in itertools.product(grid, repeat=len(phases))
+        ]
+
+    offsets = [zero]
+    for phase in phases:
+        for value in grid:
+            if value == 0.0:
+                continue
+            offsets.append({**zero, phase: value})
+    if mode == "pairs":
+        for start in range(0, len(phases) - 1, 2):
+            pair = phases[start : start + 2]
+            for values in itertools.product(grid, repeat=2):
+                if all(value == 0.0 for value in values):
+                    continue
+                offsets.append({**zero, **dict(zip(pair, values, strict=True))})
+    return offsets
+
+
+def generate_residual_routes(
+    base_route: RouteExpression,
+    *,
+    phases: list[str],
+    grid: list[float],
+    mode: ResidualRouteMode = "full",
+    min_scale: float = 0.0,
+    max_scale: float = 1.5,
+) -> list[ResidualRouteCandidate]:
+    """Generate residual deformations around a base sleep route."""
+    if min_scale > max_scale:
+        raise ValueError("residual min scale cannot exceed max scale")
+    if any(phase == base_route.stable_phase for phase in phases):
+        raise ValueError("residual phases must not include the stable phase")
+
+    candidates: dict[str, ResidualRouteCandidate] = {}
+    for residual in residual_offsets(phases, grid, mode):
+        scales = dict(base_route.scales)
+        clamped_residual = {}
+        for phase in phases:
+            base_scale = base_route.scales.get(phase, 0.0)
+            scale = clamp_scale(
+                base_scale + residual.get(phase, 0.0),
+                min_scale=min_scale,
+                max_scale=max_scale,
+            )
+            scales[phase] = scale
+            clamped_residual[phase] = scale - base_scale
+        route = route_expr_from_scales(
+            stable_phase=base_route.stable_phase,
+            scales=scales,
+            phase_order=phases,
+        )
+        candidates.setdefault(
+            route.expression,
+            ResidualRouteCandidate(
+                route=route,
+                base_route_expr=base_route.expression,
+                residual=clamped_residual,
+            ),
+        )
+    return list(candidates.values())
+
+
 def default_phase_names(count: int) -> list[str]:
     """Return A/B/C-style default phase names."""
     names = []
@@ -305,6 +500,54 @@ def settings_for_encoded(settings: LoraSettings, encoded: dict[str, Tensor]) -> 
     return replace(settings, eval_batches=eval_batches)
 
 
+MICRO_PROBE_BOUNDARY_RE = re.compile(
+    r"\b(?:answer\s+should|expected\s+(?:semantic\s+)?route)\b",
+    re.IGNORECASE,
+)
+MICRO_PROBE_PROJECT_RE = re.compile(
+    r"\bProject\s+([A-Za-z][A-Za-z0-9_-]*)\b",
+    re.IGNORECASE,
+)
+MICRO_PROBE_NAMED_SCOPE_RE = re.compile(
+    r"\b(Alpha|Beta|Gamma|Delta|Epsilon)\b",
+    re.IGNORECASE,
+)
+
+
+def bounded_phase_eval_texts(
+    texts: list[str],
+    settings: LoraSettings,
+    seed: int,
+) -> list[str]:
+    """Return the raw eval texts encoded by `prepare_encoded_splits`."""
+    _, eval_texts = split_corpus(texts, seed)
+    eval_sample_count = max(settings.batch_size, settings.batch_size * settings.eval_batches)
+    return eval_texts[:eval_sample_count]
+
+
+def split_eval_texts(
+    texts: list[str],
+    batch_size: int,
+) -> tuple[list[str], list[str], bool]:
+    """Split raw eval texts the same way `split_eval_encoded` splits tensors."""
+    if len(texts) < batch_size * 2:
+        return texts, texts, False
+    midpoint = len(texts) // 2
+    return texts[:midpoint], texts[midpoint:], True
+
+
+def prepare_probe_texts(
+    texts: list[str],
+    settings: LoraSettings,
+    seed: int,
+) -> list[str]:
+    """Return the bounded shuffled raw probe texts encoded for eval-only probes."""
+    generator = torch.Generator().manual_seed(seed)
+    indices = torch.randperm(len(texts), generator=generator).tolist()
+    sample_count = max(settings.batch_size * 2, settings.batch_size * settings.eval_batches * 2)
+    return [texts[index] for index in indices[:sample_count]]
+
+
 def prepare_probe_encoded(
     tokenizer: Any,
     texts: list[str],
@@ -313,16 +556,313 @@ def prepare_probe_encoded(
     device: str,
 ) -> dict[str, Tensor]:
     """Create a bounded shuffled encoded split from eval-only probe texts."""
-    generator = torch.Generator().manual_seed(seed)
-    indices = torch.randperm(len(texts), generator=generator).tolist()
-    sample_count = max(settings.batch_size * 2, settings.batch_size * settings.eval_batches * 2)
-    probe_texts = [texts[index] for index in indices[:sample_count]]
+    probe_texts = prepare_probe_texts(texts, settings, seed)
     return encode_texts(tokenizer, probe_texts, settings.max_length, device)
+
+
+def micro_probe_scope(text: str) -> str:
+    """Infer a scope-only selector answer from answer-stripped prompt text."""
+    lowered = text.lower()
+    if "ambiguous scope" in lowered or "unscoped" in lowered:
+        return "scope unclear"
+    project_match = MICRO_PROBE_PROJECT_RE.search(text)
+    if project_match:
+        return f"Project {project_match.group(1).capitalize()}"
+    named_match = MICRO_PROBE_NAMED_SCOPE_RE.search(text)
+    if named_match:
+        return f"Project {named_match.group(1).capitalize()}"
+    return "scope unclear"
+
+
+def build_micro_probe_text(
+    text: str,
+    *,
+    prefix_words: int,
+    template: str,
+) -> str:
+    """Build an answer-stripped route-selection probe from one report example."""
+    if prefix_words < 1:
+        raise ValueError("micro-probe prefix words must be at least 1")
+    if "{prefix}" not in template and "{scope}" not in template:
+        raise ValueError("micro-probe template must contain {prefix} or {scope}")
+    collapsed = " ".join(text.split())
+    boundary = MICRO_PROBE_BOUNDARY_RE.search(collapsed)
+    safe_text = collapsed[: boundary.start()].strip(" .,:;-") if boundary else collapsed
+    if not safe_text:
+        safe_text = collapsed
+    prefix = " ".join(safe_text.split()[:prefix_words])
+    scope = micro_probe_scope(safe_text)
+    try:
+        return template.format(prefix=prefix, scope=scope)
+    except (IndexError, KeyError) as exc:
+        raise ValueError("micro-probe template may only use {prefix} and {scope}") from exc
+
+
+def build_micro_probe_texts(
+    texts: list[str],
+    *,
+    prefix_words: int,
+    template: str,
+) -> list[str]:
+    """Build aligned micro-probe texts for a report split."""
+    return [
+        build_micro_probe_text(text, prefix_words=prefix_words, template=template)
+        for text in texts
+    ]
+
+
+def prepare_micro_probe_encoded(
+    tokenizer: Any,
+    texts: list[str],
+    settings: LoraSettings,
+    device: str,
+    *,
+    prefix_words: int,
+    max_length: int,
+    template: str,
+) -> dict[str, Tensor]:
+    """Encode short route-selection probes aligned to held-out report examples."""
+    if max_length < 1:
+        raise ValueError("micro-probe max length must be at least 1")
+    micro_texts = build_micro_probe_texts(
+        texts,
+        prefix_words=prefix_words,
+        template=template,
+    )
+    return encode_texts(tokenizer, micro_texts, max_length, device)
 
 
 def one_example(encoded: dict[str, Tensor], index: int) -> dict[str, Tensor]:
     """Return a single encoded example preserving batch dimensions."""
     return {name: value[index : index + 1] for name, value in encoded.items()}
+
+
+def select_examples(encoded: dict[str, Tensor], indices: list[int]) -> dict[str, Tensor]:
+    """Return selected encoded examples preserving tensor devices."""
+    index_tensor = torch.tensor(indices, dtype=torch.long, device=encoded["input_ids"].device)
+    return {name: value.index_select(0, index_tensor) for name, value in encoded.items()}
+
+
+def token_count_vector(encoded: dict[str, Tensor], index: int) -> dict[int, float]:
+    """Return an L2-normalized token-count vector for one encoded example."""
+    input_ids = encoded["input_ids"][index].detach().cpu().tolist()
+    if "attention_mask" in encoded:
+        attention_mask = encoded["attention_mask"][index].detach().cpu().tolist()
+    else:
+        attention_mask = [1 for _ in input_ids]
+
+    counts: dict[int, float] = {}
+    for token_id, mask_value in zip(input_ids, attention_mask, strict=True):
+        if int(mask_value) == 0:
+            continue
+        counts[int(token_id)] = counts.get(int(token_id), 0.0) + 1.0
+    norm = math.sqrt(sum(value * value for value in counts.values()))
+    if norm == 0.0:
+        return {}
+    return {token_id: value / norm for token_id, value in counts.items()}
+
+
+def dot_sparse(left: dict[int, float], right: dict[int, float]) -> float:
+    """Return a dot product for sparse token vectors."""
+    if len(left) > len(right):
+        left, right = right, left
+    return sum(value * right.get(token_id, 0.0) for token_id, value in left.items())
+
+
+def build_distilled_route_selector_from_scores(
+    encoded: dict[str, Tensor],
+    scored_examples: list[list[tuple[str, float]]],
+    *,
+    selector_margin: float = 0.0,
+    method: DistilledSelectorMethod = "centroid",
+    knn_k: int = 3,
+) -> DistilledRouteSelector:
+    """Train a token-centroid route selector from loss-probe oracle labels."""
+    if selector_margin < 0.0:
+        raise ValueError("selector margin cannot be negative")
+    if knn_k < 1:
+        raise ValueError("distilled kNN k must be at least 1")
+    sample_count = encoded["input_ids"].shape[0]
+    if len(scored_examples) != sample_count:
+        raise ValueError("scored_examples must align with encoded examples")
+    if sample_count == 0:
+        raise ValueError("at least one encoded selector example is required")
+
+    sums: dict[str, dict[int, float]] = {}
+    route_counts: dict[str, int] = {}
+    example_vectors = []
+    example_routes = []
+    for index, scored in enumerate(scored_examples):
+        if not scored:
+            raise ValueError("each selector example needs at least one route score")
+        route = scored[0][0]
+        vector = token_count_vector(encoded, index)
+        example_vectors.append(vector)
+        example_routes.append(route)
+        route_counts[route] = route_counts.get(route, 0) + 1
+        route_sum = sums.setdefault(route, {})
+        for token_id, value in vector.items():
+            route_sum[token_id] = route_sum.get(token_id, 0.0) + value
+
+    centroids = {}
+    for route, vector in sums.items():
+        count = route_counts[route]
+        averaged = {token_id: value / count for token_id, value in vector.items()}
+        norm = math.sqrt(sum(value * value for value in averaged.values()))
+        centroids[route] = (
+            {token_id: value / norm for token_id, value in averaged.items()}
+            if norm > 0.0
+            else {}
+        )
+    default_route = most_selected_route(route_counts)
+    return DistilledRouteSelector(
+        method=method,
+        centroids=centroids,
+        example_vectors=example_vectors,
+        example_routes=example_routes,
+        route_counts=route_counts,
+        default_route=default_route,
+        selector_margin=selector_margin,
+        knn_k=knn_k,
+    )
+
+
+def build_distilled_route_selector(
+    model: torch.nn.Module,
+    route_states: dict[str, dict[str, Tensor]],
+    encoded_splits: list[dict[str, Tensor]],
+    settings: LoraSettings,
+    *,
+    selector_margin: float = 0.0,
+    method: DistilledSelectorMethod = "centroid",
+    knn_k: int = 3,
+) -> DistilledRouteSelector:
+    """Score calibration examples once, then train a cheap token selector."""
+    scored_examples = []
+    encoded_examples = []
+    for encoded in encoded_splits:
+        split_scores = route_scores_for_examples(model, route_states, encoded, settings)
+        scored_examples.extend(split_scores)
+        encoded_examples.extend(one_example(encoded, index) for index in range(len(split_scores)))
+
+    if not encoded_examples:
+        raise ValueError("at least one selector split is required")
+    concatenated = {
+        name: torch.cat([example[name] for example in encoded_examples], dim=0)
+        for name in encoded_examples[0]
+    }
+    return build_distilled_route_selector_from_scores(
+        concatenated,
+        scored_examples,
+        selector_margin=selector_margin,
+        method=method,
+        knn_k=knn_k,
+    )
+
+
+def distilled_selector_scores(
+    selector: DistilledRouteSelector,
+    vector: dict[int, float],
+) -> list[tuple[str, float]]:
+    """Return route scores from the configured distilled selector backend."""
+    if selector.method == "centroid":
+        return sorted(
+            (
+                (route, dot_sparse(vector, centroid))
+                for route, centroid in selector.centroids.items()
+            ),
+            key=lambda item: item[1],
+            reverse=True,
+        )
+
+    neighbors = sorted(
+        (
+            (route, dot_sparse(vector, example_vector))
+            for route, example_vector in zip(
+                selector.example_routes,
+                selector.example_vectors,
+                strict=True,
+            )
+        ),
+        key=lambda item: item[1],
+        reverse=True,
+    )[: selector.knn_k]
+    route_scores: dict[str, float] = {}
+    for route, score in neighbors:
+        route_scores[route] = route_scores.get(route, 0.0) + score
+    if not route_scores:
+        return []
+    return sorted(route_scores.items(), key=lambda item: item[1], reverse=True)
+
+
+def distilled_route_choice(
+    selector: DistilledRouteSelector,
+    encoded: dict[str, Tensor],
+    index: int,
+) -> RouteChoice:
+    """Select one route with the distilled token-centroid selector."""
+    vector = token_count_vector(encoded, index)
+    scored = distilled_selector_scores(selector, vector)
+    if not scored:
+        best_route = selector.default_route
+        ambiguous = False
+    else:
+        best_route, best_score = scored[0]
+        ambiguous = (
+            selector.selector_margin > 0.0
+            and len(scored) > 1
+            and best_score - scored[1][1] < selector.selector_margin
+        )
+    return RouteChoice(
+        selected_route="uncertain" if ambiguous else best_route,
+        eval_route=best_route,
+        loss=0.0,
+        ambiguous=ambiguous,
+        abstained=ambiguous,
+    )
+
+
+def distilled_route_choices(
+    selector: DistilledRouteSelector,
+    encoded: dict[str, Tensor],
+) -> list[RouteChoice]:
+    """Select routes for every encoded example with a distilled selector."""
+    return [
+        distilled_route_choice(selector, encoded, index)
+        for index in range(encoded["input_ids"].shape[0])
+    ]
+
+
+def selected_route_eval_loss(
+    model: torch.nn.Module,
+    route_states: dict[str, dict[str, Tensor]],
+    encoded: dict[str, Tensor],
+    settings: LoraSettings,
+    selected_eval_routes: list[str],
+) -> float:
+    """Evaluate a per-example route assignment by grouping examples by route."""
+    sample_count = encoded["input_ids"].shape[0]
+    if len(selected_eval_routes) != sample_count:
+        raise ValueError("selected_eval_routes must align with encoded examples")
+    if sample_count == 0:
+        return 0.0
+
+    indices_by_route: dict[str, list[int]] = {}
+    for index, route in enumerate(selected_eval_routes):
+        if route not in route_states:
+            raise ValueError(f"unknown route: {route}")
+        indices_by_route.setdefault(route, []).append(index)
+
+    total_loss = 0.0
+    for route, indices in indices_by_route.items():
+        apply_trainable_state(model, route_states[route])
+        routed_encoded = select_examples(encoded, indices)
+        total_loss += eval_loss(
+            model,
+            routed_encoded,
+            settings_for_encoded(settings, routed_encoded),
+        ) * len(indices)
+    return total_loss / sample_count
 
 
 def score_route_states(
@@ -372,6 +912,7 @@ def route_choice_from_scored(
         eval_route=best_route,
         loss=best_loss,
         ambiguous=ambiguous,
+        abstained=ambiguous,
     )
 
 
@@ -472,6 +1013,8 @@ def domain_result(
         "route_accuracy": route_accuracy,
         "ambiguous_count": ambiguous_count,
         "ambiguous_rate": ambiguous_rate,
+        "abstained_count": ambiguous_count,
+        "abstention_rate": ambiguous_rate,
         "eval_loss": eval_loss_value,
         "sequential_eval_loss": sequential_eval_loss,
         "learned_eval_loss": learned_eval_loss,
@@ -497,6 +1040,9 @@ def route_optimality_audit(
     *,
     expected_route: str,
     selected_eval_routes: list[str],
+    selected_routes: list[str] | None = None,
+    top_k: int = 3,
+    ambiguity_margin: float = 0.0,
 ) -> dict[str, float | int | dict[str, int] | str]:
     """Compare selected and expected routes against per-example best-loss routes."""
     scored_examples = route_scores_for_examples(model, route_states, encoded, settings)
@@ -504,6 +1050,9 @@ def route_optimality_audit(
         scored_examples,
         expected_route=expected_route,
         selected_eval_routes=selected_eval_routes,
+        selected_routes=selected_routes,
+        top_k=top_k,
+        ambiguity_margin=ambiguity_margin,
     )
 
 
@@ -512,8 +1061,13 @@ def route_optimality_from_scores(
     *,
     expected_route: str,
     selected_eval_routes: list[str],
+    selected_routes: list[str] | None = None,
+    top_k: int = 3,
+    ambiguity_margin: float = 0.0,
 ) -> dict[str, float | int | dict[str, int] | str]:
     """Compare selected and expected routes against cached per-example route losses."""
+    if top_k < 1:
+        raise ValueError("top_k must be at least 1")
     sample_count = len(scored_examples)
     if sample_count == 0:
         return {
@@ -521,6 +1075,20 @@ def route_optimality_from_scores(
             "most_best_route": "none",
             "best_eval_loss": 0.0,
             "selected_loss_gap": 0.0,
+            "selected_route_rank": 0.0,
+            "selected_top_k_count": 0,
+            "selected_top_k_rate": 0.0,
+            "expected_top_k_count": 0,
+            "expected_top_k_rate": 0.0,
+            "top_k_loss_gap": 0.0,
+            "top_k_boundary_margin": 0.0,
+            "top_k_route_counts": {},
+            "route_margin": 0.0,
+            "route_entropy": 0.0,
+            "low_margin_count": 0,
+            "low_margin_rate": 0.0,
+            "ambiguity_abstention_rate": 0.0,
+            "false_confident_route_rate": 0.0,
             "expected_route_loss": 0.0,
             "expected_loss_gap": 0.0,
             "optimal_route_count": 0,
@@ -530,37 +1098,105 @@ def route_optimality_from_scores(
         selected_eval_routes = selected_eval_routes * sample_count
     if len(selected_eval_routes) != sample_count:
         raise ValueError("selected_eval_routes must have one route or one route per example")
+    selected_routes = selected_routes or selected_eval_routes
+    if len(selected_routes) == 1:
+        selected_routes = selected_routes * sample_count
+    if len(selected_routes) != sample_count:
+        raise ValueError("selected_routes must have one route or one route per example")
 
     first_scores = dict(scored_examples[0])
     expected_eval_route = (
         expected_route if expected_route in first_scores else next(iter(first_scores))
     )
     best_route_counts: dict[str, int] = {}
+    top_k_route_counts: dict[str, int] = {}
     best_loss_total = 0.0
     selected_gap_total = 0.0
+    selected_rank_total = 0.0
+    top_k_loss_gap_total = 0.0
+    top_k_boundary_margin_total = 0.0
+    margin_total = 0.0
+    entropy_total = 0.0
     expected_loss_total = 0.0
     expected_gap_total = 0.0
     optimal_count = 0
+    selected_top_k_count = 0
+    expected_top_k_count = 0
+    low_margin_count = 0
+    abstained_low_margin_count = 0
+    false_confident_count = 0
     for index, scored in enumerate(scored_examples):
         best_route, best_loss = scored[0]
         score_by_route = dict(scored)
         selected_route = selected_eval_routes[index]
         if selected_route not in score_by_route:
             selected_route = best_route
+        selected_label = selected_routes[index]
         selected_loss = score_by_route[selected_route]
+        selected_rank = next(
+            rank
+            for rank, (route_name, _) in enumerate(scored, start=1)
+            if route_name == selected_route
+        )
         expected_loss = score_by_route[expected_eval_route]
+        route_margin = scored[1][1] - best_loss if len(scored) > 1 else 0.0
+        margin_total += route_margin
+        effective_top_k = min(top_k, len(scored))
+        top_k_scores = scored[:effective_top_k]
+        top_k_routes = {route_name for route_name, _ in top_k_scores}
+        for route_name in top_k_routes:
+            top_k_route_counts[route_name] = top_k_route_counts.get(route_name, 0) + 1
+        selected_top_k_count += int(selected_route in top_k_routes)
+        expected_top_k_count += int(expected_eval_route in top_k_routes)
+        top_k_loss_gap_total += top_k_scores[-1][1] - best_loss
+        top_k_boundary_margin_total += (
+            scored[effective_top_k][1] - top_k_scores[-1][1]
+            if len(scored) > effective_top_k
+            else 0.0
+        )
+        low_margin = ambiguity_margin > 0.0 and route_margin < ambiguity_margin
+        low_margin_count += int(low_margin)
+        abstained = selected_label == "uncertain"
+        abstained_low_margin_count += int(low_margin and abstained)
+        false_confident_count += int(not abstained and selected_label != expected_route)
+        weights = [math.exp(-(loss - best_loss)) for _, loss in scored]
+        weight_total = sum(weights)
+        if weight_total > 0.0:
+            entropy_total += -sum(
+                (weight / weight_total) * math.log(weight / weight_total)
+                for weight in weights
+                if weight > 0.0
+            )
         best_route_counts[best_route] = best_route_counts.get(best_route, 0) + 1
         best_loss_total += best_loss
         selected_gap_total += selected_loss - best_loss
+        selected_rank_total += selected_rank
         expected_loss_total += expected_loss
         expected_gap_total += expected_loss - best_loss
         optimal_count += int(selected_loss <= best_loss + 1e-8)
 
+    ambiguity_abstention_rate = (
+        abstained_low_margin_count / low_margin_count if low_margin_count else 0.0
+    )
     return {
         "best_route_counts": best_route_counts,
         "most_best_route": most_selected_route(best_route_counts),
         "best_eval_loss": best_loss_total / sample_count,
         "selected_loss_gap": selected_gap_total / sample_count,
+        "selected_route_rank": selected_rank_total / sample_count,
+        "selected_top_k_count": selected_top_k_count,
+        "selected_top_k_rate": selected_top_k_count / sample_count,
+        "expected_top_k_count": expected_top_k_count,
+        "expected_top_k_rate": expected_top_k_count / sample_count,
+        "top_k_loss_gap": top_k_loss_gap_total / sample_count,
+        "top_k_boundary_margin": top_k_boundary_margin_total / sample_count,
+        "top_k_route_counts": top_k_route_counts,
+        "route_margin": margin_total / sample_count,
+        "route_entropy": entropy_total / sample_count,
+        "low_margin_count": low_margin_count,
+        "low_margin_rate": low_margin_count / sample_count,
+        "ambiguity_abstention_rate": ambiguity_abstention_rate,
+        "false_confident_route_rate": false_confident_count / sample_count,
         "expected_route_loss": expected_loss_total / sample_count,
         "expected_loss_gap": expected_gap_total / sample_count,
         "optimal_route_count": optimal_count,
@@ -579,6 +1215,8 @@ def evaluate_oracle_domain(
     learned_eval_loss: float,
     initial_eval_loss: float,
     audit_scores: list[list[tuple[str, float]]] | None = None,
+    top_k: int = 3,
+    ambiguity_margin: float = 0.0,
 ) -> DomainRouteResult:
     """Evaluate a domain with the known oracle route."""
     route_name = expected_route if expected_route in route_states else next(iter(route_states))
@@ -590,6 +1228,8 @@ def evaluate_oracle_domain(
             audit_scores,
             expected_route=expected_route,
             selected_eval_routes=[route_name],
+            top_k=top_k,
+            ambiguity_margin=ambiguity_margin,
         )
         if audit_scores is not None
         else route_optimality_audit(
@@ -599,6 +1239,8 @@ def evaluate_oracle_domain(
             settings,
             expected_route=expected_route,
             selected_eval_routes=[route_name],
+            top_k=top_k,
+            ambiguity_margin=ambiguity_margin,
         )
     )
     return domain_result(
@@ -627,6 +1269,7 @@ def evaluate_calibration_domain(
     initial_eval_loss: float,
     ambiguity_margin: float,
     audit_scores: list[list[tuple[str, float]]] | None = None,
+    top_k: int = 3,
 ) -> DomainRouteResult:
     """Pick one route on calibration probes and evaluate it on held-out probes."""
     choice = select_route_by_loss(
@@ -645,6 +1288,9 @@ def evaluate_calibration_domain(
             audit_scores,
             expected_route=expected_route,
             selected_eval_routes=[choice.eval_route],
+            selected_routes=[choice.selected_route],
+            top_k=top_k,
+            ambiguity_margin=ambiguity_margin,
         )
         if audit_scores is not None
         else route_optimality_audit(
@@ -654,6 +1300,9 @@ def evaluate_calibration_domain(
             settings,
             expected_route=expected_route,
             selected_eval_routes=[choice.eval_route],
+            selected_routes=[choice.selected_route],
+            top_k=top_k,
+            ambiguity_margin=ambiguity_margin,
         )
     )
     return domain_result(
@@ -682,6 +1331,7 @@ def evaluate_loss_probe_domain(
     ambiguity_margin: float,
     audit_scores: list[list[tuple[str, float]]] | None = None,
     selection_scores: list[list[tuple[str, float]]] | None = None,
+    top_k: int = 3,
 ) -> DomainRouteResult:
     """Select and evaluate routes per held-out example using probe loss."""
     selected_route_counts: dict[str, int] = {}
@@ -689,6 +1339,7 @@ def evaluate_loss_probe_domain(
     correct_count = 0
     ambiguous_count = 0
     selected_eval_routes = []
+    selected_routes = []
     sample_count = encoded["input_ids"].shape[0]
 
     scored_examples = selection_scores
@@ -698,6 +1349,7 @@ def evaluate_loss_probe_domain(
     for scored in scored_examples:
         choice = route_choice_from_scored(scored, ambiguity_margin=ambiguity_margin)
         selected_eval_routes.append(choice.eval_route)
+        selected_routes.append(choice.selected_route)
         selected_route_counts[choice.selected_route] = (
             selected_route_counts.get(choice.selected_route, 0) + 1
         )
@@ -710,6 +1362,166 @@ def evaluate_loss_probe_domain(
         audit_scores or scored_examples,
         expected_route=expected_route,
         selected_eval_routes=selected_eval_routes,
+        selected_routes=selected_routes,
+        top_k=top_k,
+        ambiguity_margin=ambiguity_margin,
+    )
+    return domain_result(
+        selected_route_counts=selected_route_counts,
+        expected_route=expected_route,
+        eval_loss_value=eval_loss_value,
+        sequential_eval_loss=sequential_eval_loss,
+        learned_eval_loss=learned_eval_loss,
+        initial_eval_loss=initial_eval_loss,
+        correct_count=correct_count,
+        ambiguous_count=ambiguous_count,
+        audit=audit,
+    )
+
+
+def evaluate_micro_probe_domain(
+    model: torch.nn.Module,
+    route_states: dict[str, dict[str, Tensor]],
+    micro_probe_encoded: dict[str, Tensor],
+    report_encoded: dict[str, Tensor],
+    settings: LoraSettings,
+    *,
+    expected_route: str,
+    sequential_eval_loss: float,
+    learned_eval_loss: float,
+    initial_eval_loss: float,
+    micro_probe_margin: float,
+    ambiguity_margin: float,
+    audit_scores: list[list[tuple[str, float]]] | None = None,
+    top_k: int = 3,
+) -> DomainRouteResult:
+    """Select per-example routes on short probes, then eval full examples."""
+    sample_count = report_encoded["input_ids"].shape[0]
+    if micro_probe_encoded["input_ids"].shape[0] != sample_count:
+        raise ValueError("micro_probe_encoded must align with report_encoded")
+
+    scored_examples = route_scores_for_examples(
+        model,
+        route_states,
+        micro_probe_encoded,
+        settings,
+    )
+    choices = [
+        route_choice_from_scored(scored, ambiguity_margin=micro_probe_margin)
+        for scored in scored_examples
+    ]
+    selected_eval_routes = [choice.eval_route for choice in choices]
+    selected_routes = [choice.selected_route for choice in choices]
+    eval_loss_value = selected_route_eval_loss(
+        model,
+        route_states,
+        report_encoded,
+        settings,
+        selected_eval_routes,
+    )
+
+    selected_route_counts: dict[str, int] = {}
+    correct_count = 0
+    ambiguous_count = 0
+    for choice in choices:
+        selected_route_counts[choice.selected_route] = (
+            selected_route_counts.get(choice.selected_route, 0) + 1
+        )
+        correct_count += int(choice.selected_route == expected_route)
+        ambiguous_count += int(choice.ambiguous)
+
+    audit = (
+        route_optimality_from_scores(
+            audit_scores,
+            expected_route=expected_route,
+            selected_eval_routes=selected_eval_routes,
+            selected_routes=selected_routes,
+            top_k=top_k,
+            ambiguity_margin=ambiguity_margin,
+        )
+        if audit_scores is not None
+        else route_optimality_audit(
+            model,
+            route_states,
+            report_encoded,
+            settings,
+            expected_route=expected_route,
+            selected_eval_routes=selected_eval_routes,
+            selected_routes=selected_routes,
+            top_k=top_k,
+            ambiguity_margin=ambiguity_margin,
+        )
+    )
+    return domain_result(
+        selected_route_counts=selected_route_counts,
+        expected_route=expected_route,
+        eval_loss_value=eval_loss_value,
+        sequential_eval_loss=sequential_eval_loss,
+        learned_eval_loss=learned_eval_loss,
+        initial_eval_loss=initial_eval_loss,
+        correct_count=correct_count,
+        ambiguous_count=ambiguous_count,
+        audit=audit,
+    )
+
+
+def evaluate_distilled_domain(
+    model: torch.nn.Module,
+    route_states: dict[str, dict[str, Tensor]],
+    selector: DistilledRouteSelector,
+    encoded: dict[str, Tensor],
+    settings: LoraSettings,
+    *,
+    expected_route: str,
+    sequential_eval_loss: float,
+    learned_eval_loss: float,
+    initial_eval_loss: float,
+    ambiguity_margin: float,
+    audit_scores: list[list[tuple[str, float]]] | None = None,
+    top_k: int = 3,
+) -> DomainRouteResult:
+    """Evaluate held-out examples with a distilled cheap route selector."""
+    choices = distilled_route_choices(selector, encoded)
+    selected_eval_routes = [choice.eval_route for choice in choices]
+    selected_routes = [choice.selected_route for choice in choices]
+    eval_loss_value = selected_route_eval_loss(
+        model,
+        route_states,
+        encoded,
+        settings,
+        selected_eval_routes,
+    )
+    selected_route_counts: dict[str, int] = {}
+    correct_count = 0
+    ambiguous_count = 0
+    for choice in choices:
+        selected_route_counts[choice.selected_route] = (
+            selected_route_counts.get(choice.selected_route, 0) + 1
+        )
+        correct_count += int(choice.selected_route == expected_route)
+        ambiguous_count += int(choice.ambiguous)
+
+    audit = (
+        route_optimality_from_scores(
+            audit_scores,
+            expected_route=expected_route,
+            selected_eval_routes=selected_eval_routes,
+            selected_routes=selected_routes,
+            top_k=top_k,
+            ambiguity_margin=ambiguity_margin,
+        )
+        if audit_scores is not None
+        else route_optimality_audit(
+            model,
+            route_states,
+            encoded,
+            settings,
+            expected_route=expected_route,
+            selected_eval_routes=selected_eval_routes,
+            selected_routes=selected_routes,
+            top_k=top_k,
+            ambiguity_margin=ambiguity_margin,
+        )
     )
     return domain_result(
         selected_route_counts=selected_route_counts,
@@ -736,14 +1548,38 @@ def evaluate_contextual_domains(
     initial_eval_losses: dict[str, float],
     phase_eval_losses: dict[str, dict[str, float]],
     ambiguity_margin: float,
+    top_k: int = 3,
+    distilled_selector_margin: float = 0.0,
+    distilled_selector_method: DistilledSelectorMethod = "centroid",
+    distilled_knn_k: int = 3,
+    eval_micro_probe: dict[str, dict[str, Tensor]] | None = None,
+    micro_probe_margin: float = 0.0,
+    expected_routes_by_domain: dict[str, str] | None = None,
     audit_scores_by_domain: dict[str, list[list[tuple[str, float]]]] | None = None,
 ) -> dict[str, DomainRouteResult]:
     """Evaluate all domains with the configured contextual routing strategy."""
     candidate_routes = list(route_states.keys())
     final_phase = phase_names[-1]
+    distilled_selector = (
+        build_distilled_route_selector(
+            model,
+            route_states,
+            [eval_select[domain] for domain in phase_names],
+            settings,
+            selector_margin=distilled_selector_margin,
+            method=distilled_selector_method,
+            knn_k=distilled_knn_k,
+        )
+        if route_selection == "distilled"
+        else None
+    )
     per_domain = {}
     for domain in phase_names:
-        expected_route = expected_route_for_domain(domain, phase_names, candidate_routes)
+        expected_route = (
+            expected_routes_by_domain[domain]
+            if expected_routes_by_domain is not None
+            else expected_route_for_domain(domain, phase_names, candidate_routes)
+        )
         common = {
             "expected_route": expected_route,
             "sequential_eval_loss": phase_eval_losses[final_phase][domain],
@@ -759,6 +1595,8 @@ def evaluate_contextual_domains(
                 route_states,
                 eval_report[domain],
                 settings,
+                top_k=top_k,
+                ambiguity_margin=ambiguity_margin,
                 **common,
             )
         elif route_selection == "calibration":
@@ -769,15 +1607,44 @@ def evaluate_contextual_domains(
                 eval_report[domain],
                 settings,
                 ambiguity_margin=ambiguity_margin,
+                top_k=top_k,
                 **common,
             )
-        else:
+        elif route_selection == "loss_probe":
             per_domain[domain] = evaluate_loss_probe_domain(
                 model,
                 route_states,
                 eval_report[domain],
                 settings,
                 ambiguity_margin=ambiguity_margin,
+                top_k=top_k,
+                **common,
+            )
+        elif route_selection == "micro_probe":
+            if eval_micro_probe is None:
+                raise ValueError("micro-probe inputs were not built")
+            per_domain[domain] = evaluate_micro_probe_domain(
+                model,
+                route_states,
+                eval_micro_probe[domain],
+                eval_report[domain],
+                settings,
+                micro_probe_margin=micro_probe_margin,
+                ambiguity_margin=ambiguity_margin,
+                top_k=top_k,
+                **common,
+            )
+        else:
+            if distilled_selector is None:
+                raise ValueError("distilled selector was not built")
+            per_domain[domain] = evaluate_distilled_domain(
+                model,
+                route_states,
+                distilled_selector,
+                eval_report[domain],
+                settings,
+                ambiguity_margin=ambiguity_margin,
+                top_k=top_k,
                 **common,
             )
     return per_domain
@@ -796,9 +1663,28 @@ def evaluate_contextual_probes(
     sequential_eval_losses: dict[str, float],
     learned_eval_losses: dict[str, float],
     ambiguity_margin: float,
+    top_k: int = 3,
+    distilled_selector_margin: float = 0.0,
+    distilled_selector_method: DistilledSelectorMethod = "centroid",
+    distilled_knn_k: int = 3,
+    probe_micro: dict[str, dict[str, Tensor]] | None = None,
+    micro_probe_margin: float = 0.0,
     audit_scores_by_probe: dict[str, list[list[tuple[str, float]]]] | None = None,
 ) -> dict[str, DomainRouteResult]:
     """Evaluate eval-only boundary probes with expected semantic routes."""
+    distilled_selector = (
+        build_distilled_route_selector(
+            model,
+            route_states,
+            [probe_select[probe.name] for probe in probes],
+            settings,
+            selector_margin=distilled_selector_margin,
+            method=distilled_selector_method,
+            knn_k=distilled_knn_k,
+        )
+        if route_selection == "distilled" and probes
+        else None
+    )
     per_probe = {}
     for probe in probes:
         common = {
@@ -816,6 +1702,8 @@ def evaluate_contextual_probes(
                 route_states,
                 probe_report[probe.name],
                 settings,
+                top_k=top_k,
+                ambiguity_margin=ambiguity_margin,
                 **common,
             )
         elif route_selection == "calibration":
@@ -826,15 +1714,44 @@ def evaluate_contextual_probes(
                 probe_report[probe.name],
                 settings,
                 ambiguity_margin=ambiguity_margin,
+                top_k=top_k,
                 **common,
             )
-        else:
+        elif route_selection == "loss_probe":
             per_probe[probe.name] = evaluate_loss_probe_domain(
                 model,
                 route_states,
                 probe_report[probe.name],
                 settings,
                 ambiguity_margin=ambiguity_margin,
+                top_k=top_k,
+                **common,
+            )
+        elif route_selection == "micro_probe":
+            if probe_micro is None:
+                raise ValueError("micro-probe inputs were not built")
+            per_probe[probe.name] = evaluate_micro_probe_domain(
+                model,
+                route_states,
+                probe_micro[probe.name],
+                probe_report[probe.name],
+                settings,
+                micro_probe_margin=micro_probe_margin,
+                ambiguity_margin=ambiguity_margin,
+                top_k=top_k,
+                **common,
+            )
+        else:
+            if distilled_selector is None:
+                raise ValueError("distilled selector was not built")
+            per_probe[probe.name] = evaluate_distilled_domain(
+                model,
+                route_states,
+                distilled_selector,
+                probe_report[probe.name],
+                settings,
+                ambiguity_margin=ambiguity_margin,
+                top_k=top_k,
                 **common,
             )
     return per_probe
@@ -852,6 +1769,8 @@ def evaluate_global_domain(
     learned_eval_loss: float,
     initial_eval_loss: float,
     audit_scores: list[list[tuple[str, float]]] | None = None,
+    top_k: int = 3,
+    ambiguity_margin: float = 0.0,
 ) -> DomainRouteResult:
     """Evaluate one domain with the same globally selected route."""
     apply_trainable_state(model, route_states[route_name])
@@ -862,6 +1781,8 @@ def evaluate_global_domain(
             audit_scores,
             expected_route=expected_route,
             selected_eval_routes=[route_name],
+            top_k=top_k,
+            ambiguity_margin=ambiguity_margin,
         )
         if audit_scores is not None
         else route_optimality_audit(
@@ -871,6 +1792,8 @@ def evaluate_global_domain(
             settings,
             expected_route=expected_route,
             selected_eval_routes=[route_name],
+            top_k=top_k,
+            ambiguity_margin=ambiguity_margin,
         )
     )
     return domain_result(
@@ -897,6 +1820,8 @@ def evaluate_global_domains(
     expected_routes: dict[str, str] | None = None,
     initial_eval_losses: dict[str, float],
     phase_eval_losses: dict[str, dict[str, float]],
+    top_k: int = 3,
+    ambiguity_margin: float = 0.0,
     audit_scores_by_domain: dict[str, list[list[tuple[str, float]]]] | None = None,
 ) -> dict[str, DomainRouteResult]:
     """Evaluate all domains using one fixed global route."""
@@ -919,6 +1844,8 @@ def evaluate_global_domains(
             sequential_eval_loss=phase_eval_losses[final_phase][domain],
             learned_eval_loss=phase_eval_losses[domain][domain],
             initial_eval_loss=initial_eval_losses[domain],
+            top_k=top_k,
+            ambiguity_margin=ambiguity_margin,
             audit_scores=None
             if audit_scores_by_domain is None
             else audit_scores_by_domain[domain],
@@ -937,6 +1864,8 @@ def evaluate_global_probes(
     initial_eval_losses: dict[str, float],
     sequential_eval_losses: dict[str, float],
     learned_eval_losses: dict[str, float],
+    top_k: int = 3,
+    ambiguity_margin: float = 0.0,
     audit_scores_by_probe: dict[str, list[list[tuple[str, float]]]] | None = None,
 ) -> dict[str, DomainRouteResult]:
     """Evaluate eval-only probes using one fixed global route."""
@@ -952,6 +1881,8 @@ def evaluate_global_probes(
             sequential_eval_loss=sequential_eval_losses[probe.name],
             learned_eval_loss=learned_eval_losses[probe.name],
             initial_eval_loss=initial_eval_losses[probe.name],
+            top_k=top_k,
+            ambiguity_margin=ambiguity_margin,
             audit_scores=None
             if audit_scores_by_probe is None
             else audit_scores_by_probe[probe.name],
@@ -973,8 +1904,19 @@ def aggregate_domain_metrics(
             "mean_interference": 0.0,
             "route_accuracy": 0.0,
             "ambiguous_rate": 0.0,
+            "abstention_rate": 0.0,
             "optimal_route_rate": 0.0,
             "selected_loss_gap": 0.0,
+            "selected_route_rank": 0.0,
+            "selected_top_k_rate": 0.0,
+            "expected_top_k_rate": 0.0,
+            "top_k_loss_gap": 0.0,
+            "top_k_boundary_margin": 0.0,
+            "route_margin": 0.0,
+            "route_entropy": 0.0,
+            "low_margin_rate": 0.0,
+            "ambiguity_abstention_rate": 0.0,
+            "false_confident_route_rate": 0.0,
             "expected_loss_gap": 0.0,
             "frontier_score": 0.0,
         }
@@ -995,11 +1937,49 @@ def aggregate_domain_metrics(
         "mean_interference": weighted("interference"),
         "route_accuracy": weighted("route_accuracy"),
         "ambiguous_rate": weighted("ambiguous_rate"),
+        "abstention_rate": weighted("abstention_rate"),
         "optimal_route_rate": weighted("optimal_route_rate"),
         "selected_loss_gap": weighted("selected_loss_gap"),
+        "selected_route_rank": weighted("selected_route_rank"),
+        "selected_top_k_rate": weighted("selected_top_k_rate"),
+        "expected_top_k_rate": weighted("expected_top_k_rate"),
+        "top_k_loss_gap": weighted("top_k_loss_gap"),
+        "top_k_boundary_margin": weighted("top_k_boundary_margin"),
+        "route_margin": weighted("route_margin"),
+        "route_entropy": weighted("route_entropy"),
+        "low_margin_rate": weighted("low_margin_rate"),
+        "ambiguity_abstention_rate": weighted("ambiguity_abstention_rate"),
+        "false_confident_route_rate": weighted("false_confident_route_rate"),
         "expected_loss_gap": weighted("expected_loss_gap"),
         "frontier_score": sequential_eval_loss - contextual_eval_loss,
     }
+
+
+def residual_metadata_by_route(
+    residual_routes: list[ResidualRouteCandidate],
+) -> dict[str, ResidualRouteCandidate]:
+    """Return residual route metadata keyed by route expression."""
+    return {candidate.route.expression: candidate for candidate in residual_routes}
+
+
+def annotate_residual_route_results(
+    route_results: dict[str, DomainRouteResult],
+    residual_routes: list[ResidualRouteCandidate],
+) -> None:
+    """Attach residual selected/best route metadata to domain or probe rows."""
+    metadata = residual_metadata_by_route(residual_routes)
+    if not metadata:
+        return
+    for result in route_results.values():
+        selected_route = result.get("most_selected_route", "none")
+        best_route = str(result.get("most_best_route", "none"))
+        result["selected_route_expr"] = selected_route
+        result["best_route_expr"] = best_route
+        if selected_route in metadata:
+            result["selected_residual"] = metadata[selected_route].residual
+        if best_route in metadata:
+            result["best_residual"] = metadata[best_route].residual
+        result["residual_gap"] = float(result.get("selected_loss_gap", 0.0))
 
 
 def memory_bank_result_record(
@@ -1021,6 +2001,20 @@ def memory_bank_result_record(
     phase_eval_losses: dict[str, dict[str, float]],
     per_probe: dict[str, DomainRouteResult] | None = None,
     global_route: str | None = None,
+    residual_contextual_route: bool = False,
+    residual_route_base_expr: str | None = None,
+    residual_route_grid: list[float] | None = None,
+    residual_route_mode: str | None = None,
+    residual_route_phases: list[str] | None = None,
+    residual_candidate_count: int = 0,
+    route_top_k: int = 3,
+    distilled_selector_method: str = "centroid",
+    distilled_selector_margin: float = 0.0,
+    distilled_knn_k: int = 3,
+    micro_probe_prefix_words: int = 8,
+    micro_probe_max_length: int = 32,
+    micro_probe_template: str = "Route selector probe: {prefix}",
+    micro_probe_margin: float = 0.0,
 ) -> MemoryBankResult:
     """Build a serializable memory-bank result from per-domain metrics."""
     aggregate = aggregate_domain_metrics(per_domain)
@@ -1042,6 +2036,14 @@ def memory_bank_result_record(
         "candidate_routes": [route.expression for route in route_exprs],
         "audit_routes": [route.expression for route in audit_route_exprs],
         "heldout_report": heldout_report,
+        "route_top_k": route_top_k,
+        "distilled_selector_method": distilled_selector_method,
+        "distilled_selector_margin": distilled_selector_margin,
+        "distilled_knn_k": distilled_knn_k,
+        "micro_probe_prefix_words": micro_probe_prefix_words,
+        "micro_probe_max_length": micro_probe_max_length,
+        "micro_probe_template": micro_probe_template,
+        "micro_probe_margin": micro_probe_margin,
         "trainable_parameters": trainable,
         "total_parameters": total,
         "trainable_fraction": trainable / total,
@@ -1052,13 +2054,39 @@ def memory_bank_result_record(
         "mean_interference": aggregate["mean_interference"],
         "route_accuracy": aggregate["route_accuracy"],
         "ambiguous_rate": aggregate["ambiguous_rate"],
+        "abstention_rate": aggregate["abstention_rate"],
         "optimal_route_rate": aggregate["optimal_route_rate"],
         "selected_loss_gap": aggregate["selected_loss_gap"],
+        "selected_route_rank": aggregate["selected_route_rank"],
+        "selected_top_k_rate": aggregate["selected_top_k_rate"],
+        "expected_top_k_rate": aggregate["expected_top_k_rate"],
+        "top_k_loss_gap": aggregate["top_k_loss_gap"],
+        "top_k_boundary_margin": aggregate["top_k_boundary_margin"],
+        "route_margin": aggregate["route_margin"],
+        "route_entropy": aggregate["route_entropy"],
+        "low_margin_rate": aggregate["low_margin_rate"],
+        "ambiguity_abstention_rate": aggregate["ambiguity_abstention_rate"],
+        "false_confident_route_rate": aggregate["false_confident_route_rate"],
         "expected_loss_gap": aggregate["expected_loss_gap"],
         "frontier_score": aggregate["frontier_score"],
         "per_domain": per_domain,
         "phase_eval_losses": phase_eval_losses,
     }
+    if residual_contextual_route:
+        result.update(
+            {
+                "residual_contextual_route": residual_contextual_route,
+                "residual_route_base_expr": residual_route_base_expr or "",
+                "residual_route_grid": residual_route_grid or [],
+                "residual_route_mode": residual_route_mode or "",
+                "residual_route_phases": residual_route_phases or [],
+                "residual_candidate_count": residual_candidate_count,
+                "residual_selected_gap": aggregate["selected_loss_gap"],
+                "residual_optimal_rate": aggregate["optimal_route_rate"],
+                "residual_route_margin": aggregate["route_margin"],
+                "residual_route_entropy": aggregate["route_entropy"],
+            }
+        )
     if per_probe:
         probe_aggregate = aggregate_domain_metrics(per_probe)
         result.update(
@@ -1066,9 +2094,23 @@ def memory_bank_result_record(
                 "probe_eval_loss": probe_aggregate["contextual_eval_loss"],
                 "probe_route_accuracy": probe_aggregate["route_accuracy"],
                 "probe_ambiguous_rate": probe_aggregate["ambiguous_rate"],
+                "probe_abstention_rate": probe_aggregate["abstention_rate"],
                 "probe_optimal_route_rate": probe_aggregate["optimal_route_rate"],
                 "probe_selected_loss_gap": probe_aggregate["selected_loss_gap"],
+                "probe_selected_top_k_rate": probe_aggregate["selected_top_k_rate"],
+                "probe_expected_top_k_rate": probe_aggregate["expected_top_k_rate"],
+                "probe_top_k_loss_gap": probe_aggregate["top_k_loss_gap"],
+                "probe_top_k_boundary_margin": probe_aggregate[
+                    "top_k_boundary_margin"
+                ],
                 "probe_expected_loss_gap": probe_aggregate["expected_loss_gap"],
+                "probe_low_margin_rate": probe_aggregate["low_margin_rate"],
+                "probe_ambiguity_abstention_rate": probe_aggregate[
+                    "ambiguity_abstention_rate"
+                ],
+                "probe_false_confident_route_rate": probe_aggregate[
+                    "false_confident_route_rate"
+                ],
                 "per_probe": per_probe,
             }
         )
@@ -1090,8 +2132,24 @@ def run_memory_bank_seed_results(
     contextual_route: bool,
     probes: list[Probe] | None = None,
     probe_texts: list[list[str]] | None = None,
+    probe_select_texts: list[list[str]] | None = None,
     audit_route_exprs: list[RouteExpression] | None = None,
+    global_route_exprs: list[RouteExpression] | None = None,
+    expected_route_exprs: list[RouteExpression] | None = None,
+    residual_routes: list[ResidualRouteCandidate] | None = None,
+    residual_contextual_route: bool = False,
+    residual_route_grid: list[float] | None = None,
+    residual_route_mode: str | None = None,
+    residual_route_phases: list[str] | None = None,
     ambiguity_margin: float = 0.0,
+    route_top_k: int = 3,
+    distilled_selector_method: DistilledSelectorMethod = "centroid",
+    distilled_selector_margin: float = 0.0,
+    distilled_knn_k: int = 3,
+    micro_probe_prefix_words: int = 8,
+    micro_probe_max_length: int = 32,
+    micro_probe_template: str = "Route selector probe: {prefix}",
+    micro_probe_margin: float = 0.0,
     include_global_routes: bool = False,
 ) -> list[MemoryBankResult]:
     """Train N phases once and evaluate contextual plus optional global routes."""
@@ -1104,22 +2162,35 @@ def run_memory_bank_seed_results(
 
     probes = probes or []
     probe_texts = probe_texts or []
+    has_explicit_probe_select = probe_select_texts is not None
+    probe_select_texts = probe_select_texts or []
     if len(probes) != len(probe_texts):
         raise ValueError("probes and probe_texts must have the same length")
+    if has_explicit_probe_select and len(probes) != len(probe_select_texts):
+        raise ValueError("probes and probe_select_texts must have the same length")
+    residual_routes = residual_routes or []
     audit_route_exprs = merge_route_exprs(route_exprs, audit_route_exprs)
-    candidate_route_names = [route.expression for route in route_exprs]
-    missing_probe_routes = sorted(
-        {
-            probe.expected_route
-            for probe in probes
-            if probe.expected_route not in candidate_route_names
-        }
-    )
-    if missing_probe_routes:
-        raise ValueError(
-            "probe expected routes must be included as --route-expr: "
-            + ", ".join(missing_probe_routes)
+    if global_route_exprs is None:
+        global_route_exprs = audit_route_exprs
+    else:
+        global_route_exprs = merge_route_exprs(global_route_exprs, None)
+        audit_route_exprs = merge_route_exprs(audit_route_exprs, global_route_exprs)
+    expected_route_sources = expected_route_exprs if expected_route_exprs else route_exprs
+    expected_route_names = [route.expression for route in expected_route_sources]
+    phase_names_for_expected = [phase.name for phase in phases]
+    expected_routes_by_domain = {
+        domain: expected_route_for_domain(
+            domain,
+            phase_names_for_expected,
+            expected_route_names,
         )
+        for domain in phase_names_for_expected
+    }
+    residual_base_expr = (
+        residual_routes[0].base_route_expr
+        if residual_routes
+        else None
+    )
 
     resolved_device = resolve_device(device)
     torch.manual_seed(seed)
@@ -1130,35 +2201,100 @@ def run_memory_bank_seed_results(
     train_splits: dict[str, dict[str, Tensor]] = {}
     eval_select: dict[str, dict[str, Tensor]] = {}
     eval_report: dict[str, dict[str, Tensor]] = {}
+    eval_report_texts: dict[str, list[str]] = {}
     heldout_flags = []
     for index, (phase, texts) in enumerate(zip(phases, phase_texts, strict=True)):
+        split_seed = seed + (index * 10_000)
+        eval_texts = bounded_phase_eval_texts(texts, settings, split_seed)
         train_split, eval_full = prepare_encoded_splits(
             tokenizer,
             texts,
             settings,
-            seed + (index * 10_000),
+            split_seed,
             resolved_device,
         )
         select_split, report_split, heldout = split_eval_encoded(eval_full, settings.batch_size)
+        _, report_texts, text_heldout = split_eval_texts(eval_texts, settings.batch_size)
+        if text_heldout != heldout:
+            raise RuntimeError("encoded/text eval splits disagree")
         train_splits[phase.name] = train_split
         eval_select[phase.name] = select_split
         eval_report[phase.name] = report_split
+        eval_report_texts[phase.name] = report_texts
         heldout_flags.append(heldout)
 
     probe_select: dict[str, dict[str, Tensor]] = {}
     probe_report: dict[str, dict[str, Tensor]] = {}
+    probe_report_texts_by_name: dict[str, list[str]] = {}
     for index, (probe, texts) in enumerate(zip(probes, probe_texts, strict=True)):
-        eval_full = prepare_probe_encoded(
+        report_seed = seed + 1_000_000 + (index * 10_000)
+        report_full_texts = prepare_probe_texts(texts, settings, report_seed)
+        report_full = encode_texts(
             tokenizer,
-            texts,
-            settings,
-            seed + 1_000_000 + (index * 10_000),
+            report_full_texts,
+            settings.max_length,
             resolved_device,
         )
-        select_split, report_split, heldout = split_eval_encoded(eval_full, settings.batch_size)
-        probe_select[probe.name] = select_split
-        probe_report[probe.name] = report_split
-        heldout_flags.append(heldout)
+        if has_explicit_probe_select:
+            select_full = prepare_probe_encoded(
+                tokenizer,
+                probe_select_texts[index],
+                settings,
+                seed + 2_000_000 + (index * 10_000),
+                resolved_device,
+            )
+            probe_select[probe.name] = select_full
+            probe_report[probe.name] = report_full
+            probe_report_texts_by_name[probe.name] = report_full_texts
+            heldout_flags.append(True)
+        else:
+            select_split, report_split, heldout = split_eval_encoded(
+                report_full,
+                settings.batch_size,
+            )
+            _, report_texts, text_heldout = split_eval_texts(
+                report_full_texts,
+                settings.batch_size,
+            )
+            if text_heldout != heldout:
+                raise RuntimeError("encoded/text probe splits disagree")
+            probe_select[probe.name] = select_split
+            probe_report[probe.name] = report_split
+            probe_report_texts_by_name[probe.name] = report_texts
+            heldout_flags.append(heldout)
+
+    eval_micro_probe = (
+        {
+            domain: prepare_micro_probe_encoded(
+                tokenizer,
+                report_texts,
+                settings,
+                resolved_device,
+                prefix_words=micro_probe_prefix_words,
+                max_length=micro_probe_max_length,
+                template=micro_probe_template,
+            )
+            for domain, report_texts in eval_report_texts.items()
+        }
+        if route_selection == "micro_probe"
+        else None
+    )
+    probe_micro = (
+        {
+            probe.name: prepare_micro_probe_encoded(
+                tokenizer,
+                probe_report_texts_by_name[probe.name],
+                settings,
+                resolved_device,
+                prefix_words=micro_probe_prefix_words,
+                max_length=micro_probe_max_length,
+                template=micro_probe_template,
+            )
+            for probe in probes
+        }
+        if route_selection == "micro_probe"
+        else None
+    )
 
     phase_names = [phase.name for phase in phases]
     initial_eval_losses = {
@@ -1220,7 +2356,9 @@ def run_memory_bank_seed_results(
         probe.name: route_eval_loss(
             model,
             audit_route_states,
-            probe.expected_route,
+            probe.expected_route
+            if probe.expected_route in audit_route_states
+            else next(iter(audit_route_states)),
             probe_report[probe.name],
             settings,
         )
@@ -1237,6 +2375,13 @@ def run_memory_bank_seed_results(
         initial_eval_losses=initial_eval_losses,
         phase_eval_losses=phase_eval_losses,
         ambiguity_margin=ambiguity_margin,
+        top_k=route_top_k,
+        distilled_selector_margin=distilled_selector_margin,
+        distilled_selector_method=distilled_selector_method,
+        distilled_knn_k=distilled_knn_k,
+        eval_micro_probe=eval_micro_probe,
+        micro_probe_margin=micro_probe_margin,
+        expected_routes_by_domain=expected_routes_by_domain,
         audit_scores_by_domain=audit_scores_by_domain,
     )
     per_probe = evaluate_contextual_probes(
@@ -1251,12 +2396,24 @@ def run_memory_bank_seed_results(
         sequential_eval_losses=sequential_probe_eval_losses,
         learned_eval_losses=learned_probe_eval_losses,
         ambiguity_margin=ambiguity_margin,
+        top_k=route_top_k,
+        distilled_selector_margin=distilled_selector_margin,
+        distilled_selector_method=distilled_selector_method,
+        distilled_knn_k=distilled_knn_k,
+        probe_micro=probe_micro,
+        micro_probe_margin=micro_probe_margin,
         audit_scores_by_probe=audit_scores_by_probe,
     )
+    annotate_residual_route_results(per_domain, residual_routes)
+    annotate_residual_route_results(per_probe, residual_routes)
     results = [
         memory_bank_result_record(
             variant=variant,
-            variant_name=f"{variant.name}_contextual_memory_bank_{route_selection}",
+            variant_name=(
+                f"{variant.name}_residual_memory_bank_{route_selection}"
+                if residual_contextual_route
+                else f"{variant.name}_contextual_memory_bank_{route_selection}"
+            ),
             settings=settings,
             resolved_device=resolved_device,
             seed=seed,
@@ -1271,14 +2428,24 @@ def run_memory_bank_seed_results(
             per_domain=per_domain,
             phase_eval_losses=phase_eval_losses,
             per_probe=per_probe,
+            residual_contextual_route=residual_contextual_route,
+            residual_route_base_expr=residual_base_expr,
+            residual_route_grid=residual_route_grid,
+            residual_route_mode=residual_route_mode,
+            residual_route_phases=residual_route_phases,
+            residual_candidate_count=len(residual_routes),
+            route_top_k=route_top_k,
+            distilled_selector_method=distilled_selector_method,
+            distilled_selector_margin=distilled_selector_margin,
+            distilled_knn_k=distilled_knn_k,
+            micro_probe_prefix_words=micro_probe_prefix_words,
+            micro_probe_max_length=micro_probe_max_length,
+            micro_probe_template=micro_probe_template,
+            micro_probe_margin=micro_probe_margin,
         )
     ]
     if include_global_routes:
-        expected_routes_by_domain = {
-            domain: expected_route_for_domain(domain, phase_names, candidate_route_names)
-            for domain in phase_names
-        }
-        for route in audit_route_exprs:
+        for route in global_route_exprs:
             global_per_domain = evaluate_global_domains(
                 model,
                 audit_route_states,
@@ -1289,6 +2456,8 @@ def run_memory_bank_seed_results(
                 expected_routes=expected_routes_by_domain,
                 initial_eval_losses=initial_eval_losses,
                 phase_eval_losses=phase_eval_losses,
+                top_k=route_top_k,
+                ambiguity_margin=ambiguity_margin,
                 audit_scores_by_domain=audit_scores_by_domain,
             )
             global_per_probe = evaluate_global_probes(
@@ -1301,8 +2470,12 @@ def run_memory_bank_seed_results(
                 initial_eval_losses=initial_probe_eval_losses,
                 sequential_eval_losses=sequential_probe_eval_losses,
                 learned_eval_losses=learned_probe_eval_losses,
+                top_k=route_top_k,
+                ambiguity_margin=ambiguity_margin,
                 audit_scores_by_probe=audit_scores_by_probe,
             )
+            annotate_residual_route_results(global_per_domain, residual_routes)
+            annotate_residual_route_results(global_per_probe, residual_routes)
             results.append(
                 memory_bank_result_record(
                     variant=variant,
@@ -1324,6 +2497,7 @@ def run_memory_bank_seed_results(
                     phase_eval_losses=phase_eval_losses,
                     per_probe=global_per_probe,
                     global_route=route.expression,
+                    route_top_k=route_top_k,
                 )
             )
     return results
@@ -1369,15 +2543,39 @@ def summarize_memory_bank(results: list[MemoryBankResult]) -> dict[str, dict[str
         "mean_interference",
         "route_accuracy",
         "ambiguous_rate",
+        "abstention_rate",
         "optimal_route_rate",
         "selected_loss_gap",
+        "selected_route_rank",
+        "selected_top_k_rate",
+        "expected_top_k_rate",
+        "top_k_loss_gap",
+        "top_k_boundary_margin",
+        "route_margin",
+        "route_entropy",
+        "low_margin_rate",
+        "ambiguity_abstention_rate",
+        "false_confident_route_rate",
+        "residual_selected_gap",
+        "residual_optimal_rate",
+        "residual_route_margin",
+        "residual_route_entropy",
+        "residual_candidate_count",
         "expected_loss_gap",
         "probe_eval_loss",
         "probe_route_accuracy",
         "probe_ambiguous_rate",
+        "probe_abstention_rate",
         "probe_optimal_route_rate",
         "probe_selected_loss_gap",
+        "probe_selected_top_k_rate",
+        "probe_expected_top_k_rate",
+        "probe_top_k_loss_gap",
+        "probe_top_k_boundary_margin",
         "probe_expected_loss_gap",
+        "probe_low_margin_rate",
+        "probe_ambiguity_abstention_rate",
+        "probe_false_confident_route_rate",
         "frontier_score",
     ]
     summary: dict[str, dict[str, float]] = {}
@@ -1408,8 +2606,20 @@ def summarize_memory_bank(results: list[MemoryBankResult]) -> dict[str, dict[str
                 "interference",
                 "route_accuracy",
                 "ambiguous_rate",
+                "abstention_rate",
                 "optimal_route_rate",
                 "selected_loss_gap",
+                "selected_route_rank",
+                "selected_top_k_rate",
+                "expected_top_k_rate",
+                "top_k_loss_gap",
+                "top_k_boundary_margin",
+                "route_margin",
+                "route_entropy",
+                "low_margin_rate",
+                "ambiguity_abstention_rate",
+                "false_confident_route_rate",
+                "residual_gap",
                 "expected_loss_gap",
             ]:
                 metric_values = [
@@ -1435,8 +2645,20 @@ def summarize_memory_bank(results: list[MemoryBankResult]) -> dict[str, dict[str
                 "loss_delta_vs_sequential",
                 "route_accuracy",
                 "ambiguous_rate",
+                "abstention_rate",
                 "optimal_route_rate",
                 "selected_loss_gap",
+                "selected_route_rank",
+                "selected_top_k_rate",
+                "expected_top_k_rate",
+                "top_k_loss_gap",
+                "top_k_boundary_margin",
+                "route_margin",
+                "route_entropy",
+                "low_margin_rate",
+                "ambiguity_abstention_rate",
+                "false_confident_route_rate",
+                "residual_gap",
                 "expected_loss_gap",
             ]:
                 if selection_count == 0:
@@ -1466,6 +2688,8 @@ def phase_paths_from_args(args: argparse.Namespace) -> list[str]:
 
 def probes_from_args(args: argparse.Namespace, *, stable_phase: str) -> list[Probe]:
     """Return eval-only probe specs from aligned CLI lists."""
+    if getattr(args, "probe_select_files", None) is not None and args.probe_files is None:
+        raise ValueError("--probe-select-files requires --probe-files")
     if args.probe_files is None:
         return []
     if args.probe_routes is None:
@@ -1492,6 +2716,21 @@ def probes_from_args(args: argparse.Namespace, *, stable_phase: str) -> list[Pro
     ]
 
 
+def probe_select_paths_from_args(
+    args: argparse.Namespace,
+    probes: list[Probe],
+) -> list[str] | None:
+    """Return optional route-selection probe files aligned to report probes."""
+    probe_select_files = getattr(args, "probe_select_files", None)
+    if probe_select_files is None:
+        return None
+    if not probes:
+        raise ValueError("--probe-select-files requires --probe-files")
+    if len(probe_select_files) != len(probes):
+        raise ValueError("--probe-select-files must match --probe-files length")
+    return list(probe_select_files)
+
+
 def parse_args() -> argparse.Namespace:
     """Parse CLI arguments for `stt-memory-bank`."""
     parser = argparse.ArgumentParser(description="Run contextual routed memory-bank LoRA tests.")
@@ -1503,6 +2742,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--task-b-file", default=None)
     parser.add_argument("--task-c-file", default=None)
     parser.add_argument("--probe-files", nargs="*", default=None)
+    parser.add_argument("--probe-select-files", nargs="*", default=None)
     parser.add_argument("--probe-names", nargs="*", default=None)
     parser.add_argument("--probe-routes", nargs="*", default=None)
     parser.add_argument("--phase-steps", type=int, default=100)
@@ -1527,13 +2767,54 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--target-modules", nargs="*", default=None)
     parser.add_argument("--route-expr", action="append", default=None)
     parser.add_argument("--audit-route-expr", action="append", default=None)
+    parser.add_argument("--residual-contextual-route", action="store_true")
+    parser.add_argument("--residual-route-base-expr", default=None)
+    parser.add_argument("--residual-route-phases", nargs="*", default=None)
+    parser.add_argument("--residual-route-grid", nargs="*", type=float, default=None)
+    parser.add_argument(
+        "--residual-route-mode",
+        choices=["full", "axis", "pairs"],
+        default="full",
+    )
+    parser.add_argument("--residual-route-min-scale", type=float, default=0.0)
+    parser.add_argument("--residual-route-max-scale", type=float, default=1.5)
+    parser.add_argument("--residual-ambiguity-margin", type=float, default=None)
     parser.add_argument("--contextual-route", action="store_true")
     parser.add_argument(
         "--route-selection",
-        choices=["oracle", "loss_probe", "calibration"],
+        choices=["oracle", "loss_probe", "calibration", "distilled", "micro_probe"],
         default="oracle",
     )
     parser.add_argument("--ambiguity-margin", type=float, default=0.0)
+    parser.add_argument("--route-top-k", type=int, default=3)
+    parser.add_argument(
+        "--distilled-selector-method",
+        choices=["centroid", "knn"],
+        default="centroid",
+    )
+    parser.add_argument(
+        "--distilled-selector-margin",
+        type=float,
+        default=0.0,
+        help=(
+            "Cosine margin for abstaining in distilled selector mode. Default 0 keeps "
+            "the selector decisive rather than abstaining on every hard prompt."
+        ),
+    )
+    parser.add_argument("--distilled-knn-k", type=int, default=3)
+    parser.add_argument("--micro-probe-prefix-words", type=int, default=8)
+    parser.add_argument("--micro-probe-max-length", type=int, default=32)
+    parser.add_argument(
+        "--micro-probe-template",
+        default="Route selector probe: {prefix}",
+        help="Template for micro-probe selector texts. May contain {prefix} and/or {scope}.",
+    )
+    parser.add_argument(
+        "--micro-probe-margin",
+        type=float,
+        default=0.0,
+        help="Loss margin for abstaining in micro-probe selector mode.",
+    )
     parser.add_argument(
         "--global-route-baseline",
         action="store_true",
@@ -1551,6 +2832,20 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     """CLI entrypoint for contextual memory-bank experiments."""
     args = parse_args()
+    if args.route_top_k < 1:
+        raise ValueError("--route-top-k must be at least 1")
+    if args.distilled_selector_margin < 0.0:
+        raise ValueError("--distilled-selector-margin cannot be negative")
+    if args.distilled_knn_k < 1:
+        raise ValueError("--distilled-knn-k must be at least 1")
+    if args.micro_probe_prefix_words < 1:
+        raise ValueError("--micro-probe-prefix-words must be at least 1")
+    if args.micro_probe_max_length < 1:
+        raise ValueError("--micro-probe-max-length must be at least 1")
+    if args.micro_probe_margin < 0.0:
+        raise ValueError("--micro-probe-margin cannot be negative")
+    if "{prefix}" not in args.micro_probe_template and "{scope}" not in args.micro_probe_template:
+        raise ValueError("--micro-probe-template must contain {prefix} or {scope}")
     task_files = phase_paths_from_args(args)
     phase_names = args.phase_names or default_phase_names(len(task_files))
     if len(phase_names) != len(task_files):
@@ -1560,18 +2855,51 @@ def main() -> None:
         for name, path in zip(phase_names, task_files, strict=True)
     ]
     stable_phase = phase_names[0]
-    route_exprs = (
+    clean_route_exprs = (
         parse_route_exprs(args.route_expr, stable_phase=stable_phase)
         if args.route_expr is not None
         else default_route_exprs(phase_names)
     )
-    audit_route_exprs = (
+    explicit_audit_route_exprs = (
         parse_route_exprs(args.audit_route_expr, stable_phase=stable_phase)
         if args.audit_route_expr is not None
         else None
     )
-    merged_audit_route_exprs = merge_route_exprs(route_exprs, audit_route_exprs)
+    residual_routes: list[ResidualRouteCandidate] = []
+    residual_route_phases = args.residual_route_phases or phase_names[1:]
+    residual_route_grid = args.residual_route_grid or [0.0]
+    route_exprs = clean_route_exprs
+    if args.residual_contextual_route:
+        if args.residual_route_base_expr is None:
+            raise ValueError(
+                "--residual-route-base-expr is required with --residual-contextual-route"
+            )
+        residual_base_route = parse_route_expr(
+            args.residual_route_base_expr,
+            stable_phase=stable_phase,
+        )
+        residual_routes = generate_residual_routes(
+            residual_base_route,
+            phases=residual_route_phases,
+            grid=residual_route_grid,
+            mode=args.residual_route_mode,
+            min_scale=args.residual_route_min_scale,
+            max_scale=args.residual_route_max_scale,
+        )
+        route_exprs = [candidate.route for candidate in residual_routes]
+    global_route_exprs = merge_route_exprs(clean_route_exprs, explicit_audit_route_exprs)
+    audit_route_exprs = merge_route_exprs(
+        route_exprs,
+        merge_route_exprs(global_route_exprs, clean_route_exprs),
+    )
+    merged_audit_route_exprs = audit_route_exprs
+    ambiguity_margin = (
+        args.residual_ambiguity_margin
+        if args.residual_contextual_route and args.residual_ambiguity_margin is not None
+        else args.ambiguity_margin
+    )
     probes = probes_from_args(args, stable_phase=stable_phase)
+    probe_select_files = probe_select_paths_from_args(args, probes)
     settings = LoraSettings(
         model_name=args.model,
         max_length=args.max_length,
@@ -1596,6 +2924,11 @@ def main() -> None:
     )[0]
     phase_texts = [load_texts(path) for path in task_files]
     probe_texts = [load_texts(probe.path) for probe in probes]
+    probe_select_texts = (
+        [load_texts(path) for path in probe_select_files]
+        if probe_select_files is not None
+        else None
+    )
     seeds = args.seeds or [args.seed]
     results = [
         result
@@ -1613,8 +2946,24 @@ def main() -> None:
             contextual_route=args.contextual_route,
             probes=probes,
             probe_texts=probe_texts,
+            probe_select_texts=probe_select_texts,
             audit_route_exprs=audit_route_exprs,
-            ambiguity_margin=args.ambiguity_margin,
+            global_route_exprs=global_route_exprs,
+            expected_route_exprs=clean_route_exprs,
+            residual_routes=residual_routes,
+            residual_contextual_route=args.residual_contextual_route,
+            residual_route_grid=residual_route_grid,
+            residual_route_mode=args.residual_route_mode,
+            residual_route_phases=residual_route_phases,
+            ambiguity_margin=ambiguity_margin,
+            route_top_k=args.route_top_k,
+            distilled_selector_method=args.distilled_selector_method,
+            distilled_selector_margin=args.distilled_selector_margin,
+            distilled_knn_k=args.distilled_knn_k,
+            micro_probe_prefix_words=args.micro_probe_prefix_words,
+            micro_probe_max_length=args.micro_probe_max_length,
+            micro_probe_template=args.micro_probe_template,
+            micro_probe_margin=args.micro_probe_margin,
             include_global_routes=args.global_route_baseline,
         )
     ]
@@ -1627,6 +2976,7 @@ def main() -> None:
             "task_files": task_files,
             "phase_names": phase_names,
             "probe_files": [probe.path for probe in probes],
+            "probe_select_files": probe_select_files or [],
             "probe_names": [probe.name for probe in probes],
             "probe_routes": [probe.expected_route for probe in probes],
             "phase_steps": args.phase_steps,
@@ -1647,9 +2997,27 @@ def main() -> None:
             "max_gossip_vectors": args.max_gossip_vectors,
             "route_exprs": [route.expression for route in route_exprs],
             "audit_route_exprs": [route.expression for route in merged_audit_route_exprs],
+            "global_route_exprs": [route.expression for route in global_route_exprs],
             "contextual_route": args.contextual_route,
             "route_selection": args.route_selection,
             "ambiguity_margin": args.ambiguity_margin,
+            "route_top_k": args.route_top_k,
+            "distilled_selector_method": args.distilled_selector_method,
+            "distilled_selector_margin": args.distilled_selector_margin,
+            "distilled_knn_k": args.distilled_knn_k,
+            "micro_probe_prefix_words": args.micro_probe_prefix_words,
+            "micro_probe_max_length": args.micro_probe_max_length,
+            "micro_probe_template": args.micro_probe_template,
+            "micro_probe_margin": args.micro_probe_margin,
+            "residual_contextual_route": args.residual_contextual_route,
+            "residual_route_base_expr": args.residual_route_base_expr,
+            "residual_route_phases": residual_route_phases,
+            "residual_route_grid": residual_route_grid,
+            "residual_route_mode": args.residual_route_mode,
+            "residual_route_min_scale": args.residual_route_min_scale,
+            "residual_route_max_scale": args.residual_route_max_scale,
+            "residual_ambiguity_margin": args.residual_ambiguity_margin,
+            "residual_candidate_count": len(residual_routes),
             "global_route_baseline": args.global_route_baseline,
             "snapshot_each_phase": args.snapshot_each_phase,
             "emit_deltas": args.emit_deltas,

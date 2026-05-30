@@ -1,0 +1,8 @@
+Ambiguous selector example asks which route should answer a cache prompt with no project name.
+Ambiguous selector answer should abstain and ask for project scope.
+Ambiguous selector asks whether Redis, SQLite WAL, or Aerospike should be chosen without scope.
+Ambiguous selector answer should not choose Beta, Gamma, or Epsilon conflict facts.
+Ambiguous selector asks whether unscoped policy prompts should activate Epsilon risk facts.
+Ambiguous selector answer should request the project before using Epsilon facts.
+Ambiguous selector asks which semantic route represents safe unscoped memory.
+Ambiguous selector answer should prefer stable route A or uncertainty, not a conflict route.

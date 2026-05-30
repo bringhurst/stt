@@ -1,0 +1,8 @@
+Epsilon selector example asks which scoped route should answer Project Epsilon prompts.
+Epsilon selector answer should choose route A+E for Project Epsilon.
+Epsilon selector asks which cache detail is scoped to Epsilon.
+Epsilon selector answer should say Aerospike belongs to Epsilon.
+Epsilon selector asks whether Gamma SQLite WAL applies to Epsilon.
+Epsilon selector answer should reject SQLite WAL for Epsilon.
+Epsilon selector asks whether reports need extra risk language.
+Epsilon selector answer should require the Epsilon risk paragraph.

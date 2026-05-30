@@ -30,6 +30,219 @@ The CLI currently supports these variants:
 - `sparse`: adds L1 activation pressure.
 - `combined`: uses smaller weights for all three regularizers.
 
+## Compartmentalized FFN Prototype
+
+`TinyTransformer` can optionally replace each standard feed-forward block with a routed compartmentalized
+FFN. This is a toy test for the hypothesis that intra-layer branch routing can act like small dendritic
+compartments inside a Transformer MLP.
+
+CLI flags:
+
+```bash
+poetry run stt-experiment \
+  --steps 80 \
+  --variants baseline combined \
+  --device cpu \
+  --compartments 4 \
+  --compartment-mode router \
+  --compartment-top-k 1 \
+  --branch-repulsion-weight 0.01 \
+  --branch-load-balance-weight 0.01
+```
+
+The explicit-router mode uses one central branch router. The dendritic mode removes that central router:
+each branch emits a local spike score, similar branch outputs inhibit one another, and the soma merges the
+top active branches.
+
+Dendritic command:
+
+```bash
+poetry run stt-experiment \
+  --steps 200 \
+  --variants baseline combined \
+  --device cpu \
+  --compartments 4 \
+  --compartment-mode dendritic \
+  --compartment-top-k 2 \
+  --branch-repulsion-weight 0.01 \
+  --branch-load-balance-weight 0.05 \
+  --branch-inhibition-strength 0.5 \
+  --branch-inhibition-weight 0.01
+```
+
+The compartment path tracks:
+
+- `branch_entropy`: normalized entropy of average branch usage; high means no collapse.
+- `branch_active_fraction`: active gate fraction; for top-1 over four branches this should be `0.25`.
+- `branch_usage_min`, `branch_usage_max`, `branch_usage_std`: load balance diagnostics.
+- `branch_score_entropy`: normalized entropy of pre-top-k score probabilities.
+- `branch_inhibition_mean`: mean dendritic inhibition magnitude before top-k selection.
+- `branch_repulsion_loss`: off-diagonal branch-output cosine similarity.
+- `branch_load_balance_loss`: squared deviation from uniform average usage.
+- `branch_inhibition_loss`: positively correlated co-active branch outputs.
+
+First paired toy comparison:
+
+```text
+steps=80
+seeds=0 1 2 3 4
+variants=baseline,combined
+dense FFN vs 4 top-1 compartments with branch repulsion/load-balance 0.01
+```
+
+Mean results:
+
+| Condition | Variant | Eval loss | Effective rank | Isotropy | Branch entropy | Usage min/max |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| dense | baseline | `0.6351` | `32.30` | `3.97` | n/a | n/a |
+| compartments | baseline | `0.6822` | `36.38` | `3.38` | `0.9858` | `0.188/0.307` |
+| dense | combined | `0.7013` | `32.02` | `4.10` | n/a | n/a |
+| compartments | combined | `0.7945` | `36.58` | `3.43` | `0.9836` | `0.184/0.309` |
+
+Longer convergence check:
+
+```text
+steps=200
+seeds=0 1 2
+```
+
+Mean results:
+
+| Condition | Variant | Eval loss | Effective rank | Isotropy | Branch entropy | Usage min/max |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| dense | baseline | `0.0750` | `31.95` | `3.41` | n/a | n/a |
+| compartments | baseline | `0.0798` | `35.05` | `3.05` | `0.9855` | `0.191/0.310` |
+| dense | combined | `0.0761` | `31.93` | `3.39` | n/a | n/a |
+| compartments | combined | `0.0804` | `35.39` | `2.97` | `0.9841` | `0.189/0.312` |
+
+Interpretation:
+
+- The prototype is mechanically viable: top-1 routing emits exactly `0.25` active branch fraction and branch entropy stays near `0.98`, so no immediate branch collapse.
+- Compartments consistently improve geometry on the toy task: effective rank is about `+10%` to `+14%`, and isotropy improves by about `10%` to `16%`.
+- The cost is a small eval-loss penalty. At 200 steps the penalty is much smaller than at 80 steps, suggesting slower convergence rather than total failure.
+- This is not yet evidence for continual-learning benefit. The next useful test is an A/B/C toy continual or accretion scaffold that compares dense vs compartment FFNs on retention and interference.
+
+First dendritic comparison:
+
+```text
+steps=80
+seeds=0 1 2 3 4
+dense vs explicit-router top-1 vs dendritic top-1
+```
+
+Mean results:
+
+| Condition | Variant | Eval loss | Effective rank | Isotropy | Branch entropy | Usage min/max |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| dense | baseline | `0.6351` | `32.30` | `3.97` | n/a | n/a |
+| router top-1 | baseline | `0.6822` | `36.38` | `3.38` | `0.9858` | `0.188/0.307` |
+| dendritic top-1 | baseline | `2.4899` | `35.33` | `4.24` | `0.4928` | `0.033/0.623` |
+| dense | combined | `0.7013` | `32.02` | `4.10` | n/a | n/a |
+| router top-1 | combined | `0.7945` | `36.58` | `3.43` | `0.9836` | `0.184/0.309` |
+| dendritic top-1 | combined | `2.4492` | `35.77` | `4.02` | `0.4585` | `0.001/0.651` |
+
+Interpretation:
+
+- Naive dendritic top-1 is a negative result. Without a central router, local spike scores collapsed onto a few branches and training loss stayed high.
+- Stronger load balance fixes entropy for top-1 but still trails the explicit-router loss curve.
+- Top-2 dendritic competition is the better minimal dendritic setting because inhibition has co-active branches to act on.
+
+Stabilized dendritic top-2 check:
+
+```text
+branches=4
+top_k=2
+branch_repulsion_weight=0.01
+branch_load_balance_weight=0.05
+branch_inhibition_strength=0.5
+branch_inhibition_weight=0.01
+```
+
+At 80 steps with seeds `0 1 2`:
+
+| Condition | Variant | Eval loss | Effective rank | Isotropy | Branch entropy | Usage min/max |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| dendritic top-2 | baseline | `0.7157` | `35.53` | `3.57` | `0.9776` | `0.160/0.321` |
+| dendritic top-2 | combined | `0.8149` | `35.68` | `3.61` | `0.9791` | `0.164/0.320` |
+
+At 200 steps with seeds `0 1 2`:
+
+| Condition | Variant | Eval loss | Effective rank | Isotropy | Branch entropy | Usage min/max |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| dense | baseline | `0.0750` | `31.95` | `3.41` | n/a | n/a |
+| dendritic top-2 | baseline | `0.0744` | `35.07` | `2.98` | `0.9950` | `0.213/0.284` |
+| dense | combined | `0.0761` | `31.93` | `3.39` | n/a | n/a |
+| dendritic top-2 | combined | `0.0779` | `35.40` | `2.93` | `0.9944` | `0.209/0.283` |
+
+Interpretation:
+
+- Dendritic top-2 is the first positive dendritic-surface signal. It matches dense eval loss by 200 steps while improving effective rank and isotropy.
+- Branch usage is more balanced than explicit-router top-1 at convergence, with entropy near `0.995`.
+- This supports continuing with dendritic top-2 for the toy continual/accretion test rather than scaling explicit-router compartments first.
+
+## Toy Accretion
+
+`stt-toy-accretion` trains one `TinyTransformer` sequentially on three marked synthetic tasks:
+
+- A uses marker token `0` and the base next-token target.
+- B uses marker token `1` and the same target rule on a different sample stream.
+- C uses marker token `2` and a large target offset, making it a stronger conflict task.
+
+The fixed eval seeds keep A/B/C losses comparable across phases. The runner reports A-after-B accretion, A/B-after-C interference, retention ratios, geometry metrics, and branch diagnostics after the final C phase.
+
+Dense smoke:
+
+```bash
+poetry run stt-toy-accretion \
+  --phase-steps 80 \
+  --variants baseline \
+  --device cpu \
+  --summary
+```
+
+Dendritic top-2 smoke:
+
+```bash
+poetry run stt-toy-accretion \
+  --phase-steps 80 \
+  --variants baseline \
+  --device cpu \
+  --compartments 4 \
+  --compartment-mode dendritic \
+  --compartment-top-k 2 \
+  --branch-repulsion-weight 0.01 \
+  --branch-load-balance-weight 0.05 \
+  --branch-inhibition-strength 0.5 \
+  --branch-inhibition-weight 0.01 \
+  --summary
+```
+
+Use this before any Qwen compartment work. It is cheap enough to run paired dense/router/dendritic seeds and directly tests whether the branch geometry helps retain earlier task behavior.
+
+First toy accretion comparison:
+
+```text
+phase_steps=80
+seeds=0 1 2
+variant=baseline
+```
+
+Mean results:
+
+| Condition | A after B | A after C | B after C | C after C | A accretion | A retention after C | B retention after C | Rank | Isotropy | Branch entropy |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| dense | `0.0944` | `7.1073` | `7.1159` | `0.1093` | `0.8278` | `0.1300` | `0.0118` | `26.37` | `4.77` | n/a |
+| router top-1 | `0.0921` | `6.4084` | `6.3684` | `0.1195` | `0.8254` | `0.1434` | `0.0145` | `31.93` | `3.79` | `0.9885` |
+| dendritic top-2 | `0.0904` | `6.3370` | `6.3229` | `0.1204` | `0.7699` | `0.1355` | `0.0141` | `31.44` | `3.78` | `0.9762` |
+| dendritic top-1 load `0.1` | `0.0969` | `6.2182` | `6.2342` | `0.1271` | `0.8804` | `0.1571` | `0.0155` | `32.68` | `3.74` | `0.9758` |
+
+Interpretation:
+
+- The revised toy scaffold now shows real A/B accretion before C; `accretion_a_after_b` is positive for all conditions.
+- Compartments improve A/B retention after conflicting C relative to dense, while preserving better rank/isotropy.
+- Dendritic top-1 with stronger load balance is currently the best retention setting in this toy scaffold, but it pays a small C-learning penalty.
+- Dendritic top-2 remains a good single-task geometry setting, but it is not yet the best accretion/retention setting.
+
 ## LoRA Fine-Tuning
 
 `stt-lora` applies the same STT losses to pretrained causal language models through LoRA adapters. This is the bridge from the toy Transformer scaffold to real small-model experiments.

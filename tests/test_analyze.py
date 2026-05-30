@@ -512,6 +512,10 @@ def test_analyze_memory_bank_record_reports_route_choices() -> None:
                 "probe_optimal_route_rate_mean": 1.0,
                 "probe_selected_loss_gap_mean": 0.0,
                 "probe_expected_loss_gap_mean": 0.0,
+                "residual_candidate_count_mean": 9.0,
+                "residual_selected_gap_mean": 0.0,
+                "residual_optimal_rate_mean": 1.0,
+                "residual_route_margin_mean": 0.2,
                 "contextual_win_count": 1.0,
             }
         },
@@ -519,6 +523,12 @@ def test_analyze_memory_bank_record_reports_route_choices() -> None:
             {
                 "variant": "gossip_contextual_memory_bank_loss_probe",
                 "route_selection": "loss_probe",
+                "residual_contextual_route": True,
+                "residual_route_base_expr": "A+0.9B+0.4C",
+                "residual_route_mode": "full",
+                "residual_route_grid": [-0.2, 0.0, 0.2],
+                "residual_route_phases": ["B", "C"],
+                "residual_candidate_count": 9,
                 "per_domain": {
                     "A": {
                         "selected_route_counts": {"A+B": 2},
@@ -543,6 +553,11 @@ def test_analyze_memory_bank_record_reports_route_choices() -> None:
                         "expected_loss_gap": 0.0,
                         "ambiguous_rate": 0.0,
                         "best_route_counts": {"A+C": 2},
+                        "selected_residual": {"B": -0.2, "C": 0.2},
+                        "best_residual": {"B": -0.2, "C": 0.2},
+                        "route_margin": 0.2,
+                        "route_entropy": 0.5,
+                        "selected_route_rank": 1.0,
                     }
                 },
             }
@@ -555,12 +570,20 @@ def test_analyze_memory_bank_record_reports_route_choices() -> None:
     assert lines[0] == (
         "memory_bank_record phases=A,B variants=gossip_contextual_memory_bank_loss_probe"
     )
-    assert any("gossip_contextual_memory_bank_loss_probe loss_probe" in line for line in lines)
+    assert any(
+        "gossip_contextual_memory_bank_loss_probe residual:loss_probe" in line
+        for line in lines
+    )
+    assert any(
+        "residual_route variant=gossip_contextual_memory_bank_loss_probe" in line
+        for line in lines
+    )
     assert any("gossip_contextual_memory_bank_loss_probe A A+B none 2" in line for line in lines)
     assert any(
         "gossip_contextual_memory_bank_loss_probe gamma_boundary A+C A+C A+C 2" in line
         for line in lines
     )
+    assert any("B:-0.20,C:+0.20" in line for line in lines)
 
 
 def test_aggregate_memory_bank_records_reports_conditions() -> None:
